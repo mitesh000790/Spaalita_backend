@@ -1,0 +1,12 @@
+# Uploaded images are served as static files only.
+Options -Indexes -ExecCGI
+
+# Never execute scripts placed in this folder.
+<FilesMatch "\.(?i:php\d*|phtml|phar|pl|py|cgi|sh|asp|aspx|jsp)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set X-Content-Type-Options "nosniff"
+</IfModule>

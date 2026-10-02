@@ -1,0 +1,32 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Trailing slashes are not redirected: "/api/users/" and "/api/users"
+    # reach the same route (a 301 would turn a POST into a GET).
+
+    # Send Requests To Front Controller...
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^ index.php [L]
+</IfModule>
+
+# Form bodies are parsed by the application (App\Http\Middleware\ParseFormBody)
+# so repeated field names and multipart PUT requests work as in the original API.
+<IfModule php_module>
+    php_flag enable_post_data_reading Off
+</IfModule>
+<IfModule mod_php.c>
+    php_flag enable_post_data_reading Off
+</IfModule>
