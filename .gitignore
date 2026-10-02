@@ -9,7 +9,6 @@
 /.idea
 /.nova
 /.phpunit.cache
-/.vscode
 /.zed
 /auth.json
 /node_modules
@@ -28,3 +27,7 @@ Thumbs.db
 !/public/uploads/.htaccess
 !/public/uploads/*/
 !/public/uploads/*/.gitkeep
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
