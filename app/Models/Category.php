@@ -98,6 +98,41 @@ class Category extends BaseModel
     }
 
     /**
+     * The category's id followed by the ids of all its sub-categories, at any
+     * depth. Empty when the category does not exist.
+     *
+     * @return list<string>
+     */
+    public static function selfAndDescendantIds(string $id): array
+    {
+        $parents = static::query()->pluck('parent_id', 'id')->all();
+
+        if (! array_key_exists($id, $parents)) {
+            return [];
+        }
+
+        $childrenOf = [];
+
+        foreach ($parents as $childId => $parentId) {
+            if ($parentId !== null) {
+                $childrenOf[$parentId][] = (string) $childId;
+            }
+        }
+
+        $ids = [$id];
+
+        for ($i = 0; $i < count($ids); $i++) {
+            foreach ($childrenOf[$ids[$i]] ?? [] as $childId) {
+                if (! in_array($childId, $ids, true)) {
+                    $ids[] = $childId;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Every root category (oldest first) with its full sub-category tree loaded.
      */
     public static function tree(): Collection

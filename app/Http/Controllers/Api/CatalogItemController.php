@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Catalog\StoreCatalogItemRequest;
+use App\Http\Resources\CatalogCategoryResource;
 use App\Http\Resources\CatalogItemDetailResource;
 use App\Http\Resources\CatalogItemListResource;
 use App\Http\Resources\CatalogItemResource;
@@ -47,19 +48,24 @@ abstract class CatalogItemController extends Controller
      * GET / - active items that have at least one image.
      *
      * Query: page, limit, search (name, SKU or root-category name),
-     * sort (latest | price_low_high | price_high_low | popular | recommended).
+     * sort (latest | price_low_high | price_high_low | popular | recommended),
+     * category (category id: items in it or any of its sub-categories).
      */
     public function index(Request $request): JsonResponse
     {
         try {
             $pagination = Pagination::strict($request);
             $search = $request->query('search', '');
+            $category = $request->query('category');
             $lookup = Category::catalogLookup();
 
-            $query = $this->query()
-                ->notInactive()
-                ->whereNotNull('product_images')
-                ->whereJsonLength('product_images', '>', 0);
+            $query = $this->listedQuery();
+
+            if (Js::truthy($category)) {
+                $categoryIds = is_string($category) ? Category::selfAndDescendantIds($category) : [];
+
+                $query->whereHas('categories', fn (Builder $categories) => $categories->whereIn('categories.id', $categoryIds));
+            }
 
             if (Js::truthy($search)) {
                 $pattern = Like::contains((string) $search);
@@ -90,6 +96,42 @@ abstract class CatalogItemController extends Controller
             ]);
         } catch (Throwable $exception) {
             return $this->serverError($this->messages()['listFailed'], $exception);
+        }
+    }
+
+    /**
+     * GET /categories - category tree for the catalogue sidebar.
+     *
+     * Only categories holding listed items (directly or in a sub-category)
+     * are included; `count` is the number of items GET /?category={id} lists.
+     */
+    public function categories(): JsonResponse
+    {
+        try {
+            $parentOf = Category::query()->pluck('parent_id', 'id')->all();
+            $counts = [];
+
+            foreach ($this->listedQuery()->with('categories:id')->get(['id']) as $item) {
+                $itemCategoryIds = [];
+
+                // The item counts once for each of its categories and their ancestors.
+                foreach ($item->categories as $category) {
+                    for ($id = $category->id; $id !== null && ! isset($itemCategoryIds[$id]); $id = $parentOf[$id] ?? null) {
+                        $itemCategoryIds[$id] = true;
+                    }
+                }
+
+                foreach (array_keys($itemCategoryIds) as $id) {
+                    $counts[$id] = ($counts[$id] ?? 0) + 1;
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => CatalogCategoryResource::nonEmpty(Category::tree(), $counts),
+            ]);
+        } catch (Throwable $exception) {
+            return $this->serverError('Error fetching categories', $exception);
         }
     }
 
@@ -280,6 +322,19 @@ abstract class CatalogItemController extends Controller
     protected function query(): Builder
     {
         return $this->model()::query();
+    }
+
+    /**
+     * Items shown in the catalogue: not inactive and with at least one image.
+     *
+     * @return Builder<CatalogItem>
+     */
+    private function listedQuery(): Builder
+    {
+        return $this->query()
+            ->notInactive()
+            ->whereNotNull('product_images')
+            ->whereJsonLength('product_images', '>', 0);
     }
 
     /**
