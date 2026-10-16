@@ -169,8 +169,8 @@ otherwise `403 {"success": false, "message": "Admin access required"}`.
 |---|---|
 | Admin | `POST /admin/login` (`username` = user name or email), `POST /admin/logout` |
 | Users | `POST /users/login` (`email` = email or user name), `POST /users/logout`, `POST /users/forgot-password`, `POST /users/reset-password/{token}`; 🔒 `GET /users/{id}`, `PUT /users/{id}` (multipart `profilePicture`; optional `newsletterOption`, `passwordCurrent`/`passwordNew`/`passwordConfirm`), `PUT /users/{id}/addresses` (customers: only their own account, 403 otherwise); 👑 `GET /users`, `POST /users` (multipart `profilePicture`), `DELETE /users/{id}` |
-| Products | `GET /products` (`page`, `limit`, `search`, `sort`), `GET /products/{id}`, `GET /products/{id}/related`, `POST /products/apply-coupon`; 👑 `POST /products`, `PUT /products/{id}` (multipart, up to 10 `productImages`), `DELETE /products/{id}` |
-| Gift cards | `GET /giftcards`, `GET /giftcards/{id}`, `GET /giftcards/{id}/related`; 👑 `POST /giftcards`, `PUT /giftcards/{id}`, `DELETE /giftcards/{id}` |
+| Products | `GET /products` (`page`, `limit`, `search`, `sort`, `category`), `GET /products/categories`, `GET /products/{id}`, `GET /products/{id}/related`, `POST /products/apply-coupon`; 👑 `POST /products`, `PUT /products/{id}` (multipart, up to 10 `productImages`), `DELETE /products/{id}` |
+| Gift cards | `GET /giftcards` (same query as products), `GET /giftcards/categories`, `GET /giftcards/{id}`, `GET /giftcards/{id}/related`; 👑 `POST /giftcards`, `PUT /giftcards/{id}`, `DELETE /giftcards/{id}` |
 | Categories | `GET /category`, `GET /category/{id}`; 👑 `POST /category`, `PUT /category/{id}` (multipart `image`), `DELETE /category/{id}` |
 | Coupons | `POST /coupon/apply`; 👑 `GET /coupon`, `GET /coupon/{id}`, `POST /coupon`, `PUT /coupon/{id}`, `DELETE /coupon/{id}` |
 | Orders | `POST /orders` (guest or logged in; optional `newsletter: true`), `POST /orders/webhook` (Stripe); 🔒 `GET /orders` (customers: their own; admins: all, guest orders included); 👑 `PUT /orders/{id}/status`, `PUT /orders/{id}`, `DELETE /orders/{id}` |
@@ -184,7 +184,22 @@ otherwise `403 {"success": false, "message": "Admin access required"}`.
 | Contact | `POST /contact` |
 | Dashboard | 👑 `GET /dashboard` |
 
-Run `php artisan route:list --path=api` for the full list (73 routes).
+Run `php artisan route:list --path=api` for the full list (75 routes).
+
+### Shop categories
+
+`GET /products?category={categoryId}` (and `/giftcards`) lists the items in
+that category or any of its sub-categories; an unknown id lists nothing.
+`GET /products/categories` (and `/giftcards/categories`) returns the
+category tree for the shop sidebar: only categories that contain listed
+items, each with `count` (what the filtered list shows) and `children`:
+
+```json
+{"success": true, "data": [
+  {"_id": "...", "name": "Jane Iredale", "slug": "jane-iradale", "count": 2,
+   "children": [{"_id": "...", "name": "Brows", "slug": "brows", "count": 2, "children": []}]}
+]}
+```
 
 ### Newsletter
 
@@ -242,7 +257,9 @@ Behaviour is otherwise identical. These changes are deliberate:
 - **Optional fields:** `serviceImage` and `buttonUrl` (services) and
   `buttonUrl` (booking policies) may be empty and are stored as `""`. The
   admin panel marks them optional and the website falls back to its default
-  banner and booking links.
+  banner and booking links. A gift card's `description` is optional too
+  (missing or empty is stored as `""`, and the website then hides the
+  Description tab); product descriptions are still required.
 - **Database-related:** responses no longer contain MongoDB's internal
   `__v` field; a malformed id returns 404 instead of a 500 cast error;
   `search` parameters are plain text (no regular expressions); unique values

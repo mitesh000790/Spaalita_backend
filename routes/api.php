@@ -60,6 +60,7 @@ Route::prefix('products')->controller(ProductController::class)->group(function 
     Route::put('{id}', 'update')->middleware(['auth.jwt', 'admin', 'upload:products,productImages,10']);
     Route::delete('{id}', 'destroy')->middleware(['auth.jwt', 'admin']);
     Route::get('/', 'index');
+    Route::get('categories', 'categories');
     Route::get('{id}', 'show');
     Route::get('{id}/related', 'related');
     Route::post('apply-coupon', 'applyCoupon');
@@ -70,6 +71,7 @@ Route::prefix('giftcards')->controller(GiftCardController::class)->group(functio
     Route::put('{id}', 'update')->middleware(['auth.jwt', 'admin', 'upload:products,productImages,10']);
     Route::delete('{id}', 'destroy')->middleware(['auth.jwt', 'admin']);
     Route::get('/', 'index');
+    Route::get('categories', 'categories');
     Route::get('{id}', 'show');
     Route::get('{id}/related', 'related');
 });
