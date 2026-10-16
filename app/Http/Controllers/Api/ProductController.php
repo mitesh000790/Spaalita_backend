@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Requests\Catalog\ApplyProductCouponRequest;
+use App\Http\Requests\Catalog\StoreCatalogItemRequest;
 use App\Models\Product;
 use App\Support\Js;
 use App\Support\TypeCaster;
@@ -24,6 +25,14 @@ class ProductController extends CatalogItemController
         'SAVE20' => ['discount' => 20, 'type' => 'percentage'],
         'FLAT50' => ['discount' => 50, 'type' => 'fixed'],
     ];
+
+    /**
+     * POST /api/products
+     */
+    public function store(StoreCatalogItemRequest $request): JsonResponse
+    {
+        return $this->createItem($request);
+    }
 
     protected function model(): string
     {

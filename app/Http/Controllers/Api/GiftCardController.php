@@ -2,13 +2,23 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Requests\Catalog\StoreGiftCardRequest;
 use App\Models\GiftCard;
+use Illuminate\Http\JsonResponse;
 
 /**
  * /api/giftcards
  */
 class GiftCardController extends CatalogItemController
 {
+    /**
+     * POST /api/giftcards (description is optional)
+     */
+    public function store(StoreGiftCardRequest $request): JsonResponse
+    {
+        return $this->createItem($request);
+    }
+
     protected function model(): string
     {
         return GiftCard::class;

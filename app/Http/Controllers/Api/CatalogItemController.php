@@ -94,9 +94,10 @@ abstract class CatalogItemController extends Controller
     }
 
     /**
-     * POST / (multipart: up to 10 "productImages")
+     * POST / (multipart: up to 10 "productImages"). Each resource validates
+     * with its own request and calls this.
      */
-    public function store(StoreCatalogItemRequest $request): JsonResponse
+    protected function createItem(StoreCatalogItemRequest $request): JsonResponse
     {
         $messages = $this->messages();
 
@@ -117,7 +118,7 @@ abstract class CatalogItemController extends Controller
                     'sku' => $sku,
                     'price' => TypeCaster::number($request->input('price'), 'price'),
                     'qty' => TypeCaster::number($request->input('qty'), 'qty'),
-                    'description' => TypeCaster::string($request->input('description'), 'description'),
+                    'description' => TypeCaster::string($request->input('description'), 'description') ?? '',
                     'product_images' => $request->attributes->get('uploaded_files') ?? [],
                 ]);
                 $item->save();
@@ -181,7 +182,7 @@ abstract class CatalogItemController extends Controller
                 'sku' => ['sku', fn ($value) => TypeCaster::string($value, 'sku', ['trim' => true])],
                 'price' => ['price', fn ($value) => TypeCaster::number($value, 'price')],
                 'qty' => ['qty', fn ($value) => TypeCaster::number($value, 'qty')],
-                'description' => ['description', fn ($value) => TypeCaster::string($value, 'description')],
+                'description' => ['description', fn ($value) => TypeCaster::string($value, 'description') ?? ''],
             ];
 
             foreach ($required as $field => [$column, $cast]) {

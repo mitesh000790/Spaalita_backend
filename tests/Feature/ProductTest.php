@@ -203,4 +203,42 @@ class ProductTest extends TestCase
         $this->deleteJson("/api/giftcards/{$id}", [], $headers)->assertJsonPath('message', 'Gift Card deleted (status set to inactive)');
         $this->deleteJson('/api/giftcards/0123456789abcdef01234567', [], $headers)->assertNotFound()->assertJsonPath('message', 'Gift card not found');
     }
+
+    public function test_gift_card_description_is_optional(): void
+    {
+        $category = Category::factory()->create();
+        $headers = $this->asAdmin();
+        $payload = ['productName' => 'Gift $25', 'price' => 25, 'qty' => 5, 'categories' => [$category->id]];
+
+        // Not sent (JSON), empty, or null: created with an empty description.
+        foreach (['G-1' => [], 'G-2' => ['description' => ''], 'G-3' => ['description' => null]] as $sku => $description) {
+            $this->postJson('/api/giftcards', ['sku' => $sku] + $description + $payload, $headers)
+                ->assertCreated()->assertJsonPath('data.description', '');
+        }
+
+        // Admin panel (multipart) with an empty description field.
+        $this->multipart('POST', '/api/giftcards', [
+            ['productName', 'Gift $10'], ['sku', 'G-4'], ['price', '10'], ['qty', '1'], ['description', ''], ['categories[]', $category->id],
+        ], [], $headers)->assertCreated()->assertJsonPath('data.description', '');
+
+        // A description can be added and cleared again.
+        $id = GiftCard::query()->where('sku', 'G-1')->value('id');
+        $this->putJson("/api/giftcards/{$id}", ['description' => '<p>Any service</p>', 'categories' => [$category->id]], $headers)
+            ->assertOk()->assertJsonPath('data.description', '<p>Any service</p>');
+        $this->putJson("/api/giftcards/{$id}", ['description' => '', 'categories' => [$category->id]], $headers)
+            ->assertOk()->assertJsonPath('data.description', '');
+        $this->getJson("/api/giftcards/{$id}")->assertOk()->assertJsonPath('data.description', '');
+
+        // The other required fields still are.
+        $this->postJson('/api/giftcards', ['sku' => 'G-5'] + array_diff_key($payload, ['price' => 0]), $headers)
+            ->assertStatus(400)->assertExactJson(['success' => false, 'message' => 'All required fields must be provided']);
+    }
+
+    public function test_product_description_is_still_required(): void
+    {
+        $category = Category::factory()->create();
+
+        $this->postJson('/api/products', ['productName' => 'P', 'sku' => 'P-1', 'price' => 5, 'qty' => 1, 'categories' => [$category->id]], $this->asAdmin())
+            ->assertStatus(400)->assertExactJson(['success' => false, 'message' => 'All required fields must be provided']);
+    }
 }

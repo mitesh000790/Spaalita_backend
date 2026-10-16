@@ -12,4 +12,12 @@ class GiftCard extends CatalogItem
     {
         return 'category_gift_card';
     }
+
+    /**
+     * Same rules as products, except that the description is optional.
+     */
+    protected function schemaRules(): array
+    {
+        return array_diff_key(parent::schemaRules(), ['description' => true]);
+    }
 }
