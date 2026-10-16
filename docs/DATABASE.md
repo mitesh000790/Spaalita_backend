@@ -43,6 +43,7 @@ keys, so the data is normalised and referential integrity is enforced.
 | password | varchar | bcrypt hash, never returned by the API |
 | role | varchar(50) | default `user` |
 | status | varchar(20) | `active` / `inactive` (soft delete), indexed |
+| newsletter_option | varchar(20) | `subscribe` / `unsubscribe` / `orderUpdates` (My Account choice), null until chosen; new column (no Mongo field) |
 | reset_password_token | varchar | SHA-256 of the reset token, indexed |
 | reset_password_expire | datetime(3) | |
 | created_at, updated_at | datetime(3) | indexed (list order) |
@@ -155,6 +156,17 @@ Identical structure.
 | type | varchar(20) | `shipping` or `billing`; unique per order |
 | name, first_name, last_name, address, city, state, zip, country, email, phone | varchar | default `''` |
 
+### newsletter_subscribers (new table, no Mongo collection)
+| Column | Type | Notes |
+|---|---|---|
+| id | char(24) PK | |
+| email | varchar | unique, stored lower-case |
+| status | varchar(20) | `subscribed` / `unsubscribed`, indexed |
+| source | varchar(20) | where the sign-up came from: `footer`, `checkout`, `account` or `admin` |
+| user_id | char(24) FK users | customer account with this email (null if none; set to null when the user is deleted), indexed |
+| subscribed_at, unsubscribed_at | datetime(3) | latest subscribe / unsubscribe |
+| created_at, updated_at | datetime(3) | created_at indexed (list order) |
+
 ### Other tables
 | Table (collection) | Columns |
 |---|---|
@@ -169,6 +181,7 @@ Identical structure.
 
 ```
 users 1─* user_addresses
+users 1─* newsletter_subscribers (user_id, nullable)
 users 1─* orders (by user_id, no FK)      orders 1─* order_items
                                           orders 1─* order_addresses
 categories 1─* categories (parent_id)

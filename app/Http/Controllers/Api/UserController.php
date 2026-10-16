@@ -10,6 +10,7 @@ use App\Http\Requests\User\UpdateUserAddressesRequest;
 use App\Http\Resources\UserResource;
 use App\Models\User;
 use App\Models\UserAddress;
+use App\Services\NewsletterService;
 use App\Support\Js;
 use App\Support\Like;
 use App\Support\Pagination;
@@ -41,6 +42,8 @@ class UserController extends Controller
         'role' => ['role'],
         'status' => ['status'],
     ];
+
+    public function __construct(private readonly NewsletterService $newsletter) {}
 
     /**
      * GET /api/users
@@ -119,10 +122,14 @@ class UserController extends Controller
     }
 
     /**
-     * GET /api/users/{id}
+     * GET /api/users/{id}  (admin, or the customer's own account)
      */
-    public function show(string $id): JsonResponse
+    public function show(Request $request, string $id): JsonResponse
     {
+        if (! $this->canManage($request, $id)) {
+            return $this->forbidden();
+        }
+
         try {
             $user = User::query()->with(['billingAddress', 'shippingAddress'])->find($id);
 
@@ -139,16 +146,36 @@ class UserController extends Controller
     /**
      * PUT /api/users/{id} (multipart: optional "profilePicture" image)
      *
-     * Only the fields present in the request are changed.
+     * Admin, or the customer's own account. Only the fields present in the
+     * request are changed; role and status can only be changed by an admin.
+     *
+     * Optional: newsletterOption ("subscribe" | "unsubscribe" | "orderUpdates"),
+     * and passwordNew + passwordConfirm (+ passwordCurrent for customers).
      */
     public function update(Request $request, string $id): JsonResponse
     {
+        if (! $this->canManage($request, $id)) {
+            return $this->forbidden();
+        }
+
         try {
-            $attributes = $this->stringAttributes($request, self::PROFILE_FIELDS, onlyPresent: true);
+            $byAdmin = $request->user()->isAdmin();
+            $fields = $byAdmin ? self::PROFILE_FIELDS : array_diff_key(self::PROFILE_FIELDS, array_flip(['role', 'status']));
+            $attributes = $this->stringAttributes($request, $fields, onlyPresent: true);
             $uploaded = $request->attributes->get('uploaded_file');
 
             if ($uploaded !== null) {
                 $attributes['profile_picture'] = "/uploads/userProfile/{$uploaded}";
+            }
+
+            $newsletterOption = $request->input('newsletterOption');
+
+            if (Js::truthy($newsletterOption)) {
+                if (! in_array($newsletterOption, User::NEWSLETTER_OPTIONS, true)) {
+                    return response()->json(['success' => false, 'message' => 'Invalid newsletter option'], 400);
+                }
+
+                $attributes['newsletter_option'] = $newsletterOption;
             }
 
             $user = User::query()->with(['billingAddress', 'shippingAddress'])->find($id);
@@ -157,7 +184,23 @@ class UserController extends Controller
                 return response()->json(['success' => false, 'message' => 'User not found'], 404);
             }
 
-            $user->applyUpdate($attributes);
+            if (Js::truthy($request->input('passwordNew'))) {
+                $passwordError = $this->passwordChangeError($request, $user, $byAdmin);
+
+                if ($passwordError !== null) {
+                    return response()->json(['success' => false, 'message' => $passwordError], 400);
+                }
+
+                $attributes['password'] = Hash::make($request->input('passwordNew'));
+            }
+
+            DB::transaction(function () use ($user, $attributes, $newsletterOption) {
+                $user->applyUpdate($attributes);
+
+                if (isset($attributes['newsletter_option'])) {
+                    $this->newsletter->applyUserOption($user, $newsletterOption);
+                }
+            });
 
             return response()->json([
                 'success' => true,
@@ -170,12 +213,16 @@ class UserController extends Controller
     }
 
     /**
-     * PUT /api/users/{id}/addresses
+     * PUT /api/users/{id}/addresses  (admin, or the customer's own account)
      *
      * Each address sent replaces the saved one entirely.
      */
     public function updateAddresses(UpdateUserAddressesRequest $request, string $id): JsonResponse
     {
+        if (! $this->canManage($request, $id)) {
+            return $this->forbidden();
+        }
+
         try {
             $addresses = [];
 
@@ -228,6 +275,44 @@ class UserController extends Controller
         } catch (Throwable $exception) {
             return $this->serverError('Error deleting user', $exception);
         }
+    }
+
+    /**
+     * Admins manage every account; customers only their own.
+     */
+    private function canManage(Request $request, string $id): bool
+    {
+        $caller = $request->user();
+
+        return $caller !== null && ($caller->isAdmin() || strcasecmp((string) $caller->id, $id) === 0);
+    }
+
+    private function forbidden(): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => 'You can only access your own account'], 403);
+    }
+
+    /**
+     * Why the requested password change cannot be made, or null when it can.
+     * Customers must confirm their current password; admins may set a new one directly.
+     */
+    private function passwordChangeError(Request $request, User $user, bool $byAdmin): ?string
+    {
+        $newPassword = $request->input('passwordNew');
+
+        if (! is_string($newPassword)) {
+            return 'Please provide a valid new password';
+        }
+
+        if ($request->exists('passwordConfirm') && $request->input('passwordConfirm') !== $newPassword) {
+            return 'New password and confirm password do not match';
+        }
+
+        if (! $byAdmin && ! Hash::check((string) $request->input('passwordCurrent'), $user->password)) {
+            return 'Current password is incorrect';
+        }
+
+        return null;
     }
 
     /**

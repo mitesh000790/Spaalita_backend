@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\UploadException;
 use App\Http\Controllers\Concerns\MapsRequestFields;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\MonthlySpecial\StoreMonthlySpecialRequest;
 use App\Http\Resources\MonthlySpecialResource;
 use App\Models\MonthlySpecial;
+use App\Services\ImageUploadService;
 use App\Support\Js;
 use App\Support\Like;
 use App\Support\Pagination;
@@ -17,6 +19,11 @@ use Throwable;
 
 /**
  * Only one monthly special may exist per month.
+ *
+ * The image is sent as a base64 data URI (admin panel), as an uploaded
+ * "image" file (multipart) or as a URL. Data URIs and files are saved under
+ * /uploads/monthlySpecial/ and the record keeps that path, so large images
+ * never have to fit in a single database packet.
  */
 class MonthlySpecialController extends Controller
 {
@@ -26,6 +33,8 @@ class MonthlySpecialController extends Controller
         'month' => ['month', ['trim' => true]],
         'image' => ['image'],
     ];
+
+    public function __construct(private readonly ImageUploadService $uploads) {}
 
     /**
      * GET /api/monthly-special
@@ -51,10 +60,12 @@ class MonthlySpecialController extends Controller
     }
 
     /**
-     * POST /api/monthly-special
+     * POST /api/monthly-special  {month, image} (JSON, or multipart with an "image" file)
      */
     public function store(StoreMonthlySpecialRequest $request): JsonResponse
     {
+        $newImage = null;
+
         try {
             $attributes = $this->stringAttributes($request, self::FIELDS);
 
@@ -62,14 +73,20 @@ class MonthlySpecialController extends Controller
                 return $this->duplicateMonth($request->input('month'));
             }
 
-            $special = MonthlySpecial::query()->create($attributes);
+            $newImage = $this->saveNewImage($request, $attributes['image']);
+
+            $special = MonthlySpecial::query()->create(['image' => $newImage ?? $attributes['image']] + $attributes);
 
             return response()->json([
                 'success' => true,
                 'message' => 'Monthly special created successfully',
                 'data' => new MonthlySpecialResource($special),
             ], 201);
+        } catch (UploadException $exception) {
+            return $this->invalidImage($exception);
         } catch (Throwable $exception) {
+            $this->uploads->delete($newImage, MonthlySpecial::UPLOAD_FOLDER);
+
             return $this->serverError('Error creating monthly special', $exception);
         }
     }
@@ -93,10 +110,14 @@ class MonthlySpecialController extends Controller
     }
 
     /**
-     * PUT /api/monthly-special/{id}
+     * PUT /api/monthly-special/{id}  (JSON, or multipart with an optional new "image" file)
+     *
+     * A new image replaces the stored file; the current path sent back unchanged keeps it.
      */
     public function update(Request $request, string $id): JsonResponse
     {
+        $newImage = null;
+
         try {
             $month = $request->input('month');
 
@@ -118,14 +139,29 @@ class MonthlySpecialController extends Controller
                 return response()->json(['success' => false, 'message' => 'Monthly special not found'], 404);
             }
 
+            $newImage = $this->saveNewImage($request, $attributes['image'] ?? null);
+
+            if ($newImage !== null) {
+                $attributes['image'] = $newImage;
+            }
+
+            $previousImage = $special->image;
             $special->applyUpdate($attributes);
+
+            if ($special->image !== $previousImage) {
+                $this->uploads->delete($previousImage, MonthlySpecial::UPLOAD_FOLDER);
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Monthly special updated successfully',
                 'data' => new MonthlySpecialResource($special),
             ]);
+        } catch (UploadException $exception) {
+            return $this->invalidImage($exception);
         } catch (Throwable $exception) {
+            $this->uploads->delete($newImage, MonthlySpecial::UPLOAD_FOLDER);
+
             return $this->serverError('Error updating monthly special', $exception);
         }
     }
@@ -143,11 +179,35 @@ class MonthlySpecialController extends Controller
             }
 
             $special->delete();
+            $this->uploads->delete($special->image, MonthlySpecial::UPLOAD_FOLDER);
 
             return response()->json(['success' => true, 'message' => 'Monthly special deleted successfully']);
         } catch (Throwable $exception) {
             return $this->serverError('Error deleting monthly special', $exception);
         }
+    }
+
+    /**
+     * Save the image sent with this request as a file: the uploaded "image"
+     * file, or a base64 data URI. Returns its public path, or null when the
+     * request carries neither (a URL or existing path is stored as sent).
+     *
+     * @throws UploadException when the data URI is not a valid image
+     */
+    private function saveNewImage(Request $request, ?string $image): ?string
+    {
+        $filename = $request->attributes->get('uploaded_file');
+
+        if ($filename === null && ImageUploadService::isDataUri($image)) {
+            $filename = $this->uploads->storeDataUri($image, MonthlySpecial::UPLOAD_FOLDER);
+        }
+
+        return $filename === null ? null : '/uploads/'.MonthlySpecial::UPLOAD_FOLDER.'/'.$filename;
+    }
+
+    private function invalidImage(UploadException $exception): JsonResponse
+    {
+        return response()->json(['success' => false, 'message' => $exception->getMessage()], 400);
     }
 
     private function duplicateMonth(mixed $month): JsonResponse

@@ -33,6 +33,18 @@ class AuthTest extends TestCase
         $this->assertSame(3600, $claims['exp'] - $claims['iat']);
     }
 
+    public function test_admin_logs_in_with_the_email_address(): void
+    {
+        $admin = Admin::factory()->create(['username' => 'admin', 'email' => 'Admin@Example.com', 'password' => self::BCRYPTJS_HASH]);
+
+        $this->postJson('/api/admin/login', ['username' => ' admin@example.com ', 'password' => 'Admin@321'])
+            ->assertOk()
+            ->assertJsonPath('data.id', $admin->id)
+            ->assertJsonPath('data.username', 'admin');
+        $this->postJson('/api/admin/login', ['username' => 'admin@example.com', 'password' => 'wrong'])
+            ->assertStatus(400)->assertJsonPath('message', 'Invalid credentials');
+    }
+
     public function test_admin_login_failures(): void
     {
         Admin::factory()->create(['username' => 'admin', 'password' => self::BCRYPTJS_HASH]);
@@ -77,6 +89,16 @@ class AuthTest extends TestCase
         $claims = $this->claims($response->json('data.token'));
         $this->assertSame(['id', 'email', 'role', 'iat', 'exp'], array_keys($claims));
         $this->assertSame(86400, $claims['exp'] - $claims['iat']);
+    }
+
+    public function test_user_logs_in_with_the_user_name(): void
+    {
+        $user = User::factory()->create(['user_name' => 'jane', 'email' => 'jane@example.com', 'password' => bcrypt('Secret@1')]);
+
+        $this->postJson('/api/users/login', ['email' => ' jane ', 'password' => 'Secret@1'])
+            ->assertOk()->assertJsonPath('data.user.id', $user->id);
+        $this->postJson('/api/users/login', ['email' => 'jane', 'password' => 'wrong'])
+            ->assertStatus(401)->assertJsonPath('message', 'Invalid email or password');
     }
 
     public function test_inactive_users_and_wrong_passwords_cannot_log_in(): void

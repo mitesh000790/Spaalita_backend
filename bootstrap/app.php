@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuthenticateToken;
+use App\Http\Middleware\EnsureAdmin;
 use App\Http\Middleware\HandleImageUploads;
 use App\Http\Middleware\LogIncomingRequest;
 use App\Http\Middleware\OptionalAuthenticateToken;
@@ -38,6 +39,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.jwt' => AuthenticateToken::class,
             'auth.jwt.optional' => OptionalAuthenticateToken::class,
+            'admin' => EnsureAdmin::class,
             'upload' => HandleImageUploads::class,
         ]);
     })

@@ -4,6 +4,8 @@ namespace App\Http\Requests\MonthlySpecial;
 
 use App\Http\Requests\ApiFormRequest;
 use App\Rules\Truthy;
+use App\Support\Js;
+use Illuminate\Validation\Validator;
 
 class StoreMonthlySpecialRequest extends ApiFormRequest
 {
@@ -13,7 +15,26 @@ class StoreMonthlySpecialRequest extends ApiFormRequest
     {
         return [
             'month' => [new Truthy],
-            'image' => [new Truthy],
+        ];
+    }
+
+    /**
+     * The image may be sent as a field (base64 data URI or URL) or as an
+     * uploaded "image" file (multipart, stored by the upload middleware).
+     *
+     * @return array<int, callable>
+     */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $hasImage = Js::truthy($this->validationData()['image'] ?? null)
+                    || $this->attributes->get('uploaded_file') !== null;
+
+                if (! $hasImage) {
+                    $validator->errors()->add('image', $this->failureMessage);
+                }
+            },
         ];
     }
 }

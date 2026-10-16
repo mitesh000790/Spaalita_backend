@@ -85,13 +85,17 @@ class OrderTest extends TestCase
 
         $this->postJson('/api/orders', $item, $this->asUser($jane))->assertCreated();
         $this->postJson('/api/orders', $item, $this->asUser($bob))->assertCreated();
-        $this->postJson('/api/orders', $item + ['guestInfo' => ['name' => 'G']])->assertCreated();
+        $this->travel(1)->seconds();
+        $this->postJson('/api/orders', $item + ['guestInfo' => ['name' => 'Gina', 'email' => 'gina@example.com']])->assertCreated();
 
         $this->getJson('/api/orders', $this->asAdmin())
             ->assertOk()
-            ->assertJsonCount(2, 'data')
+            ->assertJsonCount(3, 'data')
             ->assertJsonPath('pagination.totalPages', 1)
-            ->assertJsonMissingPath('data.0.user.password');
+            ->assertJsonPath('data.0.user', null)
+            ->assertJsonPath('data.0.guestInfo.email', 'gina@example.com')
+            ->assertJsonMissingPath('data.1.user.password');
+        $this->getJson('/api/orders?search=gina@', $this->asAdmin())->assertJsonCount(1, 'data');
 
         $this->getJson('/api/orders', $this->asUser($jane))
             ->assertJsonCount(1, 'data')

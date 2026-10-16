@@ -143,8 +143,9 @@ class ContentTest extends TestCase
         $this->multipart('PUT', "/api/gallery/{$images[0]['_id']}", [], [['image', 'c.png', 'image/png']], $headers)
             ->assertOk()->assertJsonPath('message', 'Image updated successfully');
 
-        $this->deleteJson("/api/gallery/{$images[1]['_id']}")->assertOk()->assertJsonPath('message', 'Image deleted successfully');
-        $this->deleteJson("/api/gallery/{$images[1]['_id']}")->assertNotFound()->assertExactJson(['message' => 'Image not found']);
+        $this->deleteJson("/api/gallery/{$images[1]['_id']}")->assertStatus(401);
+        $this->deleteJson("/api/gallery/{$images[1]['_id']}", [], $headers)->assertOk()->assertJsonPath('message', 'Image deleted successfully');
+        $this->deleteJson("/api/gallery/{$images[1]['_id']}", [], $headers)->assertNotFound()->assertExactJson(['message' => 'Image not found']);
         $this->assertSame(1, Gallery::query()->count());
     }
 

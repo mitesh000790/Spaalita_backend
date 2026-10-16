@@ -24,17 +24,19 @@ class UserAuthController extends Controller
 
     /**
      * POST /api/users/login
+     *
+     * The "email" field accepts the customer's email address or user name.
      */
     public function login(UserLoginRequest $request): JsonResponse
     {
         try {
             $email = TypeCaster::string($request->input('email'), 'email', ['lowercase' => true]);
+            $userName = TypeCaster::string($request->input('email'), 'email', ['trim' => true]);
 
-            $user = User::query()
-                ->with(['billingAddress', 'shippingAddress'])
-                ->where('email', $email)
-                ->where('status', 'active')
-                ->first();
+            $activeUsers = fn () => User::query()->with(['billingAddress', 'shippingAddress'])->where('status', 'active');
+
+            $user = $activeUsers()->where('email', $email)->first()
+                ?? $activeUsers()->where('user_name', $userName)->first();
 
             if ($user === null || ! Hash::check((string) $request->input('password'), $user->password)) {
                 return response()->json(['success' => false, 'message' => 'Invalid email or password'], 401);

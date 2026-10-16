@@ -31,6 +31,7 @@ class LoginUserResource extends ApiResource
             'profilePicture' => $this->profile_picture,
             'role' => $this->role,
             'status' => $this->status,
+            'newsletterOption' => $this->newsletter_option,
             // An empty object when no address was saved.
             'billing' => $this->resource->billingAddress?->toApiArray() ?: (object) [],
             'shipping' => $this->resource->shippingAddress?->toApiArray() ?: (object) [],

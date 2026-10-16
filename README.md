@@ -161,27 +161,41 @@ collection maps to it) is documented in [docs/DATABASE.md](docs/DATABASE.md).
 
 ## API
 
-All routes are prefixed with `/api`. 🔒 = requires `Authorization: Bearer <token>`.
+All routes are prefixed with `/api`. 🔒 = requires `Authorization: Bearer <token>`
+(customer or admin); 👑 = requires an admin token (from `/admin/login`),
+otherwise `403 {"success": false, "message": "Admin access required"}`.
 
 | Resource | Endpoints |
 |---|---|
-| Admin | `POST /admin/login`, `POST /admin/logout` |
-| Users | `POST /users/login`, `POST /users/logout`, `POST /users/forgot-password`, `POST /users/reset-password/{token}`; 🔒 `GET /users`, `GET /users/{id}`, `POST /users` (multipart `profilePicture`), `PUT /users/{id}` (multipart `profilePicture`), `PUT /users/{id}/addresses`, `DELETE /users/{id}` |
-| Products | `GET /products` (`page`, `limit`, `search`, `sort`), `GET /products/{id}`, `GET /products/{id}/related`, `POST /products/apply-coupon`; 🔒 `POST /products`, `PUT /products/{id}` (multipart, up to 10 `productImages`), `DELETE /products/{id}` |
-| Gift cards | `GET /giftcards`, `GET /giftcards/{id}`, `GET /giftcards/{id}/related`; 🔒 `POST /giftcards`, `PUT /giftcards/{id}`, `DELETE /giftcards/{id}` |
-| Categories | `GET /category`, `GET /category/{id}`; 🔒 `POST /category`, `PUT /category/{id}` (multipart `image`), `DELETE /category/{id}` |
-| Coupons | `POST /coupon/apply`; 🔒 `GET /coupon`, `GET /coupon/{id}`, `POST /coupon`, `PUT /coupon/{id}`, `DELETE /coupon/{id}` |
-| Orders | `POST /orders` (guest or logged in), `POST /orders/webhook` (Stripe); 🔒 `GET /orders`, `PUT /orders/{id}/status`, `PUT /orders/{id}`, `DELETE /orders/{id}` |
+| Admin | `POST /admin/login` (`username` = user name or email), `POST /admin/logout` |
+| Users | `POST /users/login` (`email` = email or user name), `POST /users/logout`, `POST /users/forgot-password`, `POST /users/reset-password/{token}`; 🔒 `GET /users/{id}`, `PUT /users/{id}` (multipart `profilePicture`; optional `newsletterOption`, `passwordCurrent`/`passwordNew`/`passwordConfirm`), `PUT /users/{id}/addresses` (customers: only their own account, 403 otherwise); 👑 `GET /users`, `POST /users` (multipart `profilePicture`), `DELETE /users/{id}` |
+| Products | `GET /products` (`page`, `limit`, `search`, `sort`), `GET /products/{id}`, `GET /products/{id}/related`, `POST /products/apply-coupon`; 👑 `POST /products`, `PUT /products/{id}` (multipart, up to 10 `productImages`), `DELETE /products/{id}` |
+| Gift cards | `GET /giftcards`, `GET /giftcards/{id}`, `GET /giftcards/{id}/related`; 👑 `POST /giftcards`, `PUT /giftcards/{id}`, `DELETE /giftcards/{id}` |
+| Categories | `GET /category`, `GET /category/{id}`; 👑 `POST /category`, `PUT /category/{id}` (multipart `image`), `DELETE /category/{id}` |
+| Coupons | `POST /coupon/apply`; 👑 `GET /coupon`, `GET /coupon/{id}`, `POST /coupon`, `PUT /coupon/{id}`, `DELETE /coupon/{id}` |
+| Orders | `POST /orders` (guest or logged in; optional `newsletter: true`), `POST /orders/webhook` (Stripe); 🔒 `GET /orders` (customers: their own; admins: all, guest orders included); 👑 `PUT /orders/{id}/status`, `PUT /orders/{id}`, `DELETE /orders/{id}` |
 | Payment | `POST /payment/create-payment-intent` |
-| Services | `GET /services`, `GET /services/{id}`; 🔒 `POST`, `PUT /{id}` (JSON, or multipart with an optional `serviceImage` file), `DELETE /{id}` |
-| Booking policies | `GET /booking-policies`, `GET /booking-policies/{id}`; 🔒 `POST`, `PUT /{id}`, `DELETE /{id}` |
-| Monthly special | `GET /monthly-special`, `GET /monthly-special/{id}`; 🔒 `POST`, `PUT /{id}`, `DELETE /{id}` |
-| Roles | 🔒 `GET /roles`, `GET /roles/{id}`, `POST /roles`, `PUT /roles/{id}`, `DELETE /roles/{id}` |
-| Gallery | `GET /gallery` (`date=dd-mm-yyyy`), `DELETE /gallery/{id}`; 🔒 `POST /gallery/create` (up to 10 `images`), `PUT /gallery/{id}` (`image`) |
+| Newsletter | `POST /newsletter/subscribe` (`email`, optional `source`), `POST /newsletter/unsubscribe` (`email`); 👑 `GET /newsletter` (`page`, `limit`, `search`, `status`), `DELETE /newsletter/{id}` |
+| Services | `GET /services`, `GET /services/{id}`; 👑 `POST`, `PUT /{id}` (JSON, or multipart with an optional `serviceImage` file), `DELETE /{id}` |
+| Booking policies | `GET /booking-policies`, `GET /booking-policies/{id}`; 👑 `POST`, `PUT /{id}`, `DELETE /{id}` |
+| Monthly special | `GET /monthly-special`, `GET /monthly-special/{id}`; 👑 `POST`, `PUT /{id}` (`image` as a base64 data URI or URL in JSON, or an `image` file in multipart), `DELETE /{id}` |
+| Roles | 👑 `GET /roles`, `GET /roles/{id}`, `POST /roles`, `PUT /roles/{id}`, `DELETE /roles/{id}` |
+| Gallery | `GET /gallery` (`date=dd-mm-yyyy`); 👑 `POST /gallery/create` (up to 10 `images`), `PUT /gallery/{id}` (`image`), `DELETE /gallery/{id}` |
 | Contact | `POST /contact` |
-| Dashboard | 🔒 `GET /dashboard` |
+| Dashboard | 👑 `GET /dashboard` |
 
-Run `php artisan route:list --path=api` for the full list (69 routes).
+Run `php artisan route:list --path=api` for the full list (73 routes).
+
+### Newsletter
+
+Sign-ups come from the website footer (`source: footer`), the checkout
+checkbox (`newsletter: true` on `POST /orders`, `source: checkout`) and
+My Account > Account details (`newsletterOption`, `source: account`).
+They are stored in `newsletter_subscribers`, one row per email. An email
+that belongs to a customer account is linked to it, and the account's
+`newsletterOption` (`subscribe`, `unsubscribe` or `orderUpdates`) follows
+every subscribe and unsubscribe. A failed newsletter sign-up never fails
+an order.
 
 ## Differences from the Node.js version
 
@@ -190,7 +204,17 @@ Behaviour is otherwise identical. These changes are deliberate:
 - **Security:** password hashes and reset tokens are no longer included in
   user records (`/api/users`, order lists, user creation). Uploaded files
   always keep an image extension and `public/uploads` cannot execute scripts.
-  `JWT_SECRET` must be at least 32 characters.
+  `JWT_SECRET` must be at least 32 characters. Admin-panel endpoints (👑)
+  now require an admin token: a customer token can no longer create
+  products, read other customers, change orders, etc. Customers can only
+  read and edit their own account and addresses, and cannot change their
+  own `role` or `status`. `DELETE /api/gallery/{id}` now requires an admin
+  token (the admin panel already sends one).
+- **Added:** the newsletter API (above); customer login with the user name
+  as well as the email; password change from My Account (`passwordNew` and
+  `passwordConfirm`, plus `passwordCurrent` for customers); `GET /api/orders`
+  lists guest orders for admins (`user: null`, details in `guestInfo`;
+  `search` also matches the guest name and email).
 - **Bugs fixed where the Node feature did not work:**
   - The Stripe webhook verified an empty body, so it always answered 400;
     it now verifies real Stripe events and updates the order.
@@ -207,6 +231,14 @@ Behaviour is otherwise identical. These changes are deliberate:
     `serviceImage` as a URL or base64 string.
   - Updating a user's profile picture recorded `userProfile/<file>` (a
     broken link); it is now `/uploads/userProfile/<file>`, as on creation.
+  - Monthly special images sent as base64 (the admin panel's form) were
+    stored in the database row, so an image over about 750 KB failed with
+    500 "Error creating monthly special" (MySQL `max_allowed_packet`, 1 MB
+    in XAMPP). The image is now saved as a file and the record stores
+    `/uploads/monthlySpecial/<file>` (jpg, png, gif or webp, detected from
+    the image data; anything else gets 400). Multipart `image` uploads are
+    accepted too, URLs are stored as sent, and a replaced or deleted image's
+    file is removed. `mongo:import` converts base64 images the same way.
 - **Optional fields:** `serviceImage` and `buttonUrl` (services) and
   `buttonUrl` (booking policies) may be empty and are stored as `""`. The
   admin panel marks them optional and the website falls back to its default
@@ -225,11 +257,9 @@ Behaviour is otherwise identical. These changes are deliberate:
 These behaviours of the original code were kept as-is (so the frontends
 see no change) and are worth reviewing later:
 
-- `DELETE /api/gallery/{id}` does not require a token.
 - `GET /api/products/{id}/related` returns any 4 other active products (not
   the same category). Product lists only show items that have images and
   only their top-level categories.
-- `GET /api/orders` does not list guest orders.
 - At checkout with `createAccount`, two guests with the same first and last
   name cannot both get accounts (the generated user name is taken), and the
   order then fails.

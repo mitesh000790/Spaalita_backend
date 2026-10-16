@@ -29,7 +29,8 @@ class OrderListResource extends OrderResource
         $order = parent::toArray($request);
 
         return array_merge($order, [
-            'user' => new UserResource($this->resource->user),
+            // null for guest checkouts (their details are in guestInfo)
+            'user' => $this->resource->user === null ? null : new UserResource($this->resource->user),
             'shippingAddress' => $order['shippingAddress'] ?? '',
             'products' => CatalogItemResource::collection($this->products()),
         ]);

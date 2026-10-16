@@ -33,6 +33,7 @@ class UserResource extends ApiResource
             'postalCode' => $this->postal_code,
             'role' => $this->role,
             'status' => $this->status,
+            'newsletterOption' => $this->newsletter_option,
             'billing' => self::address($this->resource->billingAddress),
             'shipping' => self::address($this->resource->shippingAddress),
             'createdAt' => self::isoDate($this->created_at),

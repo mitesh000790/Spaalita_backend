@@ -33,8 +33,8 @@ class OrderController extends Controller
     /**
      * GET /api/orders
      *
-     * Admins see every order; other users only their own. Orders without a
-     * registered customer (guest checkouts) are not listed.
+     * Admins see every order, guest checkouts included (user: null, see
+     * guestInfo); other users only their own.
      */
     public function index(Request $request): JsonResponse
     {
@@ -44,7 +44,7 @@ class OrderController extends Controller
             $search = (string) $request->query('search', '');
             $authUser = $request->user();
 
-            $query = Order::query()->whereHas('user');
+            $query = Order::query();
 
             if (! $authUser->isAdmin()) {
                 $query->where('user_id', $authUser->id);
@@ -59,6 +59,8 @@ class OrderController extends Controller
 
                 $query->where(fn (Builder $query) => $query
                     ->where('status', 'like', $pattern)
+                    ->orWhere('guest_name', 'like', $pattern)
+                    ->orWhere('guest_email', 'like', $pattern)
                     ->orWhereHas('user', fn (Builder $user) => $user
                         ->where('user_name', 'like', $pattern)
                         ->orWhere('email', 'like', $pattern))

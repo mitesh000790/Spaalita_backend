@@ -14,14 +14,19 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Stripe\PaymentIntent;
+use Throwable;
 
 /**
  * Places an order: optionally registers a guest, applies the coupon
  * discount, creates the Stripe PaymentIntent and stores the pending order.
+ * A ticked "newsletter" checkbox also subscribes the customer's email.
  */
 class CheckoutService
 {
-    public function __construct(private readonly StripeService $stripe) {}
+    public function __construct(
+        private readonly StripeService $stripe,
+        private readonly NewsletterService $newsletter,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $input  validated checkout payload
@@ -70,7 +75,32 @@ class CheckoutService
             $paymentIntent->id,
         ));
 
+        if (Js::truthy($input['newsletter'] ?? null)) {
+            $this->joinNewsletter($input, $order->user_id);
+        }
+
         return [$order, $paymentIntent];
+    }
+
+    /**
+     * Subscribe the account email (or the guest/billing email) to the newsletter.
+     * A failed sign-up is logged and never fails the order.
+     *
+     * @param  array<string, mixed>  $input
+     */
+    private function joinNewsletter(array $input, ?string $userId): void
+    {
+        try {
+            $user = $userId !== null ? User::query()->find($userId) : null;
+            $email = $user?->email
+                ?? (self::field($input['guestInfo'] ?? null, 'email') ?: self::field($input['billingAddress'] ?? null, 'email'));
+
+            if (is_string($email) && filter_var(trim($email), FILTER_VALIDATE_EMAIL) !== false) {
+                $this->newsletter->subscribe($email, 'checkout', $user);
+            }
+        } catch (Throwable $exception) {
+            Log::warning('Checkout newsletter sign-up failed: '.$exception->getMessage());
+        }
     }
 
     /**

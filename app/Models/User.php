@@ -13,6 +13,16 @@ class User extends BaseModel
 
     public const STATUSES = ['active', 'inactive'];
 
+    public const NEWSLETTER_SUBSCRIBE = 'subscribe';
+
+    public const NEWSLETTER_UNSUBSCRIBE = 'unsubscribe';
+
+    /**
+     * Choices offered on My Account > Account details
+     * ("orderUpdates": order emails only, no newsletter).
+     */
+    public const NEWSLETTER_OPTIONS = [self::NEWSLETTER_SUBSCRIBE, self::NEWSLETTER_UNSUBSCRIBE, 'orderUpdates'];
+
     protected $fillable = [
         'profile_picture',
         'user_name',
@@ -27,6 +37,7 @@ class User extends BaseModel
         'password',
         'role',
         'status',
+        'newsletter_option',
         'reset_password_token',
         'reset_password_expire',
     ];

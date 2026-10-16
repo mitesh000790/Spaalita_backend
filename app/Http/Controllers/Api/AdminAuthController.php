@@ -22,7 +22,10 @@ class AdminAuthController extends Controller
     {
         try {
             $username = TypeCaster::string($request->input('username'), 'username', ['trim' => true]);
-            $admin = Admin::query()->where('username', $username)->first();
+
+            // The "username" field accepts the admin's username or email address
+            $admin = Admin::query()->where('username', $username)->first()
+                ?? Admin::query()->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $username)])->first();
 
             if ($admin === null) {
                 return response()->json(['success' => false, 'message' => 'Invalid credentials'], 400);

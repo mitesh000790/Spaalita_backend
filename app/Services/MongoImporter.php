@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Exceptions\UploadException;
+use App\Models\MonthlySpecial;
 use App\Models\OrderAddress;
 use App\Models\UserAddress;
 use App\Support\ExtendedJson;
@@ -46,6 +48,8 @@ class MongoImporter
      * @var array<string, string>
      */
     private array $legacyCategoryIds = [];
+
+    public function __construct(private readonly ImageUploadService $uploads) {}
 
     /**
      * Import every collection file found in the directory.
@@ -344,11 +348,26 @@ class MongoImporter
         ] + $this->timestamps($document));
     }
 
+    /**
+     * Base64 data URI images are saved as files under /uploads/monthlySpecial/,
+     * as the API does (a large one would not fit in one database packet).
+     */
     private function importMonthlySpecials(array $document): void
     {
+        $image = (string) ($document['image'] ?? '');
+
+        if (ImageUploadService::isDataUri($image)) {
+            try {
+                $folder = MonthlySpecial::UPLOAD_FOLDER;
+                $image = "/uploads/{$folder}/".$this->uploads->storeDataUri($image, $folder);
+            } catch (UploadException) {
+                // Not a recognised image: keep the value as it was in MongoDB.
+            }
+        }
+
         $this->replace('monthly_specials', $this->id($document), [
             'month' => (string) ($document['month'] ?? $document['title'] ?? ''),
-            'image' => (string) ($document['image'] ?? ''),
+            'image' => $image,
         ] + $this->timestamps($document));
     }
 

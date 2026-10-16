@@ -4,6 +4,11 @@ namespace App\Models;
 
 class MonthlySpecial extends BaseModel
 {
+    /**
+     * Folder under public/uploads for images saved from uploads and data URIs.
+     */
+    public const UPLOAD_FOLDER = 'monthlySpecial';
+
     protected $fillable = [
         'month',
         'image',
