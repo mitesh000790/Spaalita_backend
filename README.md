@@ -14,38 +14,46 @@ frontends work without changes (only the API base URL may change).
 
 | | |
 |---|---|
-| PHP | **8.2 or newer** with `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`, `curl`, `zip` (XAMPP builds include them) |
+| PHP | **8.2 or newer** with `pdo_mysql`, `mbstring`, `openssl`, `fileinfo`, `curl`, `zip` (XAMPP builds include them). Use a patched release: **8.4.27+** here (or 8.2.35+, 8.3.36+, 8.5.12+), which fix CVE-2026-109618 and CVE-2026-109619 |
 | Composer | 2.x |
 | Database | MySQL 5.7+ or MariaDB 10.3+ (XAMPP's MariaDB works) |
 
 > **XAMPP's PHP is too old.** Typing `php ...` in a terminal uses XAMPP's
 > PHP 7.1, which fails with *"Your Composer dependencies require a PHP version
-> >= 8.2.0"*. This machine has a separate PHP 8.2 in `C:\php82` (Composer
-> included) that is used only for this project, so XAMPP and the other
+> >= 8.2.0"*. This machine has a separate PHP 8.4 in `C:\php84` (Composer
+> included) that is used for this project, so XAMPP and the other
 > PHP 7 projects in `htdocs` keep working unchanged.
 >
-> To set it up on another PC: download the "VS16 x64 Non Thread Safe" zip of
-> PHP 8.2 from https://windows.php.net/download, extract it to `C:\php82`,
-> copy `php.ini-development` to `php.ini` and enable `extension_dir` and the
-> extensions `curl, fileinfo, gd, intl, mbstring, openssl, pdo_mysql,
-> pdo_sqlite, sodium, sqlite3, zip`.
+> To set it up on another PC: download the "VS17 x64 Non Thread Safe" zip of
+> PHP 8.4.27 (or a newer 8.4 release) from
+> https://www.php.net/downloads.php?os=windows&version=8.4, check its SHA256
+> against that page, extract it to `C:\php84`, copy `php.ini-development` to
+> `php.ini` and enable `extension_dir` and the extensions `curl, fileinfo, gd,
+> intl, mbstring, openssl, pdo_mysql, pdo_sqlite, sodium, sqlite3, zip`.
+> PHP 8.4 needs the Visual C++ 2015-2022 x64 redistributable.
 
-### Using PHP 8.2 in a terminal
+`composer.json` sets `config.platform.php` to `8.4.27`. That only tells
+Composer which PHP to resolve packages for; it does not install PHP or change
+the PHP that XAMPP, Apache or the terminal run.
 
-`start-server.bat` finds PHP 8.2 by itself. For other commands (`composer`,
-`artisan`), put PHP 8.2 first on the PATH of the current terminal window
-(this only affects that window):
+### Using PHP 8.4 in a terminal
+
+`start-server.bat` finds PHP 8.4 by itself. If `php -v` in a new terminal
+does not print 8.4.x (the system PATH still lists `C:\xampp\php` first), put
+PHP 8.4 first on the PATH of the current terminal window (this only affects
+that window):
 
 ```bat
 cd C:\xampp\htdocs\spaalita\Spaalita_backend
-set PATH=C:\php82;%PATH%
-php -v                          :: should print PHP 8.2.x
+set PATH=C:\php84;%PATH%
+php -v                          :: should print PHP 8.4.x
+composer --version              :: Composer 2.10+ from C:\php84
 ```
 
 ## Setup
 
 Already done on this machine (dependencies installed, `.env` created, database
-migrated and seeded). On a new machine, in a terminal using PHP 8.2:
+migrated and seeded). On a new machine, in a terminal using PHP 8.4:
 
 ```bash
 cd C:\xampp\htdocs\spaalita\Spaalita_backend
@@ -81,7 +89,7 @@ start-server.bat            :: port 5000
 start-server.bat 5001       :: another port
 ```
 
-(equivalent to `php artisan serve --port=5000` with PHP 8.2). Stop it with
+(equivalent to `php artisan serve --port=5000` with PHP 8.4). Stop it with
 Ctrl+C. The port must be free: if another local server already uses 5000,
 stop it first or use another port and point the
 website at it (`VITE_API_BASE_URL=http://localhost:5001/api/` in the React
@@ -94,7 +102,8 @@ so the frontends need no change at all. The React website
 against this server out of the box; its API calls were replayed against both
 backends during the conversion and give the same responses.
 
-**Option 2, XAMPP Apache (PHP 8.2):** start Apache and use
+**Option 2, XAMPP Apache:** only works once Apache runs PHP 8.4 (thread
+safe build) instead of XAMPP's PHP 7.1. Then start Apache and use
 `http://localhost/spaalita/Spaalita_backend/public/api/...` (images:
 `.../public/uploads/...`). For a cleaner URL, create an Apache virtual host
 whose `DocumentRoot` is the `public` folder.
@@ -316,6 +325,6 @@ docs/DATABASE.md          Tables, columns, keys and the MongoDB → MySQL mappin
 public/uploads/           Uploaded images (products, gallery, categories, userProfile)
 routes/api.php            All API routes
 server.php                Router for `php artisan serve` (CORS header on uploads)
-start-server.bat          Starts the API with PHP 8.2 on Windows
+start-server.bat          Starts the API with PHP 8.4 on Windows
 tests/                    Feature and unit tests
 ```
