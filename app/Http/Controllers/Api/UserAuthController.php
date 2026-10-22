@@ -9,6 +9,7 @@ use App\Http\Resources\LoginUserResource;
 use App\Models\User;
 use App\Services\JwtService;
 use App\Support\TypeCaster;
+use App\Support\WordPressPassword;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,8 +39,19 @@ class UserAuthController extends Controller
             $user = $activeUsers()->where('email', $email)->first()
                 ?? $activeUsers()->where('user_name', $userName)->first();
 
-            if ($user === null || ! Hash::check((string) $request->input('password'), $user->password)) {
+            $password = (string) $request->input('password');
+            $isWordPressHash = $user !== null && WordPressPassword::isWordPressHash($user->password);
+            $passwordIsValid = $user !== null && ($isWordPressHash
+                ? WordPressPassword::check($password, $user->password)
+                : Hash::check($password, $user->password));
+
+            if (! $passwordIsValid) {
                 return response()->json(['success' => false, 'message' => 'Invalid email or password'], 401);
+            }
+
+            if ($isWordPressHash) {
+                $user->password = Hash::make($password);
+                $user->save();
             }
 
             return response()->json([

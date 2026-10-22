@@ -6,6 +6,7 @@ use App\Models\Admin;
 use App\Models\User;
 use Firebase\JWT\JWT;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class AuthTest extends TestCase
@@ -89,6 +90,27 @@ class AuthTest extends TestCase
         $claims = $this->claims($response->json('data.token'));
         $this->assertSame(['id', 'email', 'role', 'iat', 'exp'], array_keys($claims));
         $this->assertSame(86400, $claims['exp'] - $claims['iat']);
+    }
+
+    public function test_user_logs_in_with_a_wordpress_password_and_upgrades_hash(): void
+    {
+        $password = 'WordPress@123';
+        $wordpressHash = '$wp$'.substr(password_hash(
+            base64_encode(hash_hmac('sha384', $password, 'wp-sha384', true)),
+            PASSWORD_BCRYPT,
+        ), 1);
+        $user = User::factory()->create([
+            'email' => 'migrated@example.com',
+            'password' => $wordpressHash,
+        ]);
+
+        $this->postJson('/api/users/login', ['email' => 'migrated@example.com', 'password' => $password])
+            ->assertOk()
+            ->assertJsonPath('data.user.id', $user->id);
+
+        $user->refresh();
+        $this->assertStringStartsWith('$2y$', $user->password);
+        $this->assertTrue(Hash::check($password, $user->password));
     }
 
     public function test_user_logs_in_with_the_user_name(): void
