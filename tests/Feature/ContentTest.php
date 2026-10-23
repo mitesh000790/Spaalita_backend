@@ -7,6 +7,7 @@ use App\Models\Gallery;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -118,11 +119,102 @@ class ContentTest extends TestCase
     public function test_contact_form(): void
     {
         $this->postJson('/api/contact', ['name' => 'Ann'])
-            ->assertStatus(400)->assertJsonPath('message', 'All required fields must be filled.');
-        $this->postJson('/api/contact', ['name' => 'Ann', 'email' => 'a@x.com', 'phone' => 123, 'subject' => 'Hi', 'message' => 'Hello'])
+            ->assertStatus(400)->assertJsonPath('message', 'Please complete all required fields and the reCAPTCHA.');
+
+        config(['services.recaptcha.secret' => 'test-recaptcha-secret']);
+        Http::fake([
+            'https://www.google.com/recaptcha/api/siteverify' => Http::response([
+                'success' => true,
+                'score' => 0.9,
+                'action' => 'contact_submit',
+            ]),
+        ]);
+
+        $this->postJson('/api/contact', [
+            'name' => 'Ann',
+            'email' => 'a@x.com',
+            'phone' => 123,
+            'subject' => 'Hi',
+            'message' => 'Hello',
+            'g-recaptcha-response' => 'valid-test-token',
+        ])
             ->assertCreated()
             ->assertJsonPath('data.phone', '123')
             ->assertJsonMissingPath('data.updatedAt');
+
+        Http::assertSent(fn ($request) => $request->url() === 'https://www.google.com/recaptcha/api/siteverify'
+            && $request['secret'] === 'test-recaptcha-secret'
+            && $request['response'] === 'valid-test-token');
+    }
+
+    public function test_contact_form_rejects_invalid_recaptcha_tokens(): void
+    {
+        config(['services.recaptcha.secret' => 'test-recaptcha-secret']);
+        Http::fake([
+            'https://www.google.com/recaptcha/api/siteverify' => Http::response([
+                'success' => false,
+                'error-codes' => ['invalid-input-response'],
+            ]),
+        ]);
+
+        $this->postJson('/api/contact', [
+            'name' => 'Ann',
+            'email' => 'a@x.com',
+            'phone' => 123,
+            'subject' => 'Hi',
+            'message' => 'Hello',
+            'g-recaptcha-response' => 'invalid-test-token',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'reCAPTCHA verification failed. Please try again.');
+
+        $this->assertDatabaseCount('contacts', 0);
+    }
+
+    public function test_contact_form_rejects_recaptcha_wrong_action_or_low_score(): void
+    {
+        config(['services.recaptcha.secret' => 'test-recaptcha-secret', 'services.recaptcha.minimum_score' => 0.5]);
+        Http::fake([
+            'https://www.google.com/recaptcha/api/siteverify' => Http::sequence()
+                ->push(['success' => true, 'score' => 0.9, 'action' => 'other_action'])
+                ->push(['success' => true, 'score' => 0.3, 'action' => 'contact_submit']),
+        ]);
+        $payload = [
+            'name' => 'Ann',
+            'email' => 'a@x.com',
+            'phone' => 123,
+            'subject' => 'Hi',
+            'message' => 'Hello',
+            'g-recaptcha-response' => 'test-token',
+        ];
+
+        $this->postJson('/api/contact', $payload)
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'reCAPTCHA verification failed. Please try again.');
+        $this->postJson('/api/contact', $payload)
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'reCAPTCHA verification failed. Please try again.');
+
+        $this->assertDatabaseCount('contacts', 0);
+    }
+
+    public function test_contact_form_fails_closed_when_recaptcha_is_not_configured(): void
+    {
+        config(['services.recaptcha.secret' => null]);
+
+        $this->postJson('/api/contact', [
+            'name' => 'Ann',
+            'email' => 'a@x.com',
+            'phone' => 123,
+            'subject' => 'Hi',
+            'message' => 'Hello',
+            'g-recaptcha-response' => 'test-token',
+        ])
+            ->assertStatus(503)
+            ->assertJsonPath('success', false);
+
+        $this->assertDatabaseCount('contacts', 0);
     }
 
     public function test_gallery_upload_list_update_and_delete(): void

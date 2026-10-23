@@ -7,7 +7,7 @@ use App\Rules\Truthy;
 
 class StoreContactRequest extends ApiFormRequest
 {
-    protected ?string $failureMessage = 'All required fields must be filled.';
+    protected ?string $failureMessage = 'Please complete all required fields and the reCAPTCHA.';
 
     public function rules(): array
     {
@@ -17,6 +17,7 @@ class StoreContactRequest extends ApiFormRequest
             'phone' => [new Truthy],
             'subject' => [new Truthy],
             'message' => [new Truthy],
+            'g-recaptcha-response' => ['required', 'string'],
         ];
     }
 }

@@ -42,4 +42,9 @@ return [
         'api_base' => env('STRIPE_API_BASE'),
     ],
 
+    'recaptcha' => [
+        'secret' => env('RECAPTCHA_SECRET_KEY'),
+        'minimum_score' => (float) env('RECAPTCHA_MINIMUM_SCORE', 0.5),
+    ],
+
 ];
