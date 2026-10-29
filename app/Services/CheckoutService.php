@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\PaymentMethod;
 use App\Exceptions\CastException;
 use App\Models\Order;
 use App\Models\OrderAddress;
@@ -18,7 +19,8 @@ use Throwable;
 
 /**
  * Places an order: optionally registers a guest, applies the coupon
- * discount, creates the Stripe PaymentIntent and stores the pending order.
+ * discount, creates the Stripe PaymentIntent for the chosen payment method
+ * (card or Klarna) and stores the pending order.
  * A ticked "newsletter" checkbox also subscribes the customer's email.
  */
 class CheckoutService
@@ -57,14 +59,17 @@ class CheckoutService
             throw new InvalidArgumentException('Invalid integer: NaN');
         }
 
+        $paymentMethod = PaymentMethod::fromInput($input['paymentMethod'] ?? null);
+
         $paymentIntent = $this->stripe->createPaymentIntent(
             (int) $amountInCents,
-            'usd',
+            config('services.stripe.currency'),
             [
                 'userId' => Js::truthy($userId) ? (string) $userId : 'guest',
                 'email' => self::jsString(self::field($guestInfo, 'email') ?: ''),
                 'couponCode' => self::jsString(self::field($coupon, 'code') ?: ''),
             ],
+            $paymentMethod->stripePaymentMethodTypes(),
         );
 
         $order = DB::transaction(fn () => $this->createOrder(
@@ -73,6 +78,7 @@ class CheckoutService
             $finalAmount,
             $coupon,
             $paymentIntent->id,
+            $paymentMethod,
         ));
 
         if (Js::truthy($input['newsletter'] ?? null)) {
@@ -106,7 +112,7 @@ class CheckoutService
     /**
      * @param  array<string, mixed>  $input
      */
-    private function createOrder(array $input, ?string $userId, mixed $finalAmount, mixed $coupon, string $paymentIntentId): Order
+    private function createOrder(array $input, ?string $userId, mixed $finalAmount, mixed $coupon, string $paymentIntentId, PaymentMethod $paymentMethod): Order
     {
         $guestInfo = $userId === null ? ($input['guestInfo'] ?? null) : null;
         $couponData = is_array($coupon) ? $coupon : ($coupon !== null ? [] : null);
@@ -119,6 +125,7 @@ class CheckoutService
             'total_amount' => TypeCaster::number($finalAmount, 'totalAmount'),
             'status' => 'pending',
             'payment_intent_id' => $paymentIntentId,
+            'payment_method' => $paymentMethod->value,
             'payment_status' => 'pending',
             'coupon_code' => $couponData === null ? null : TypeCaster::string($couponData['code'] ?? null, 'coupon.code'),
             'coupon_discount_amount' => $couponData === null ? null : (TypeCaster::number($couponData['discountAmount'] ?? null, 'coupon.discountAmount') ?? 0),

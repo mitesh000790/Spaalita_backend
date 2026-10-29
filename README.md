@@ -159,6 +159,7 @@ Override the admin with `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` in `.e
 | `JWT_ADMIN_TTL` / `JWT_USER_TTL` | Token lifetimes in seconds (3600 / 86400, as before) |
 | `STRIPE_SECRET_KEY` | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret of the `/api/orders/webhook` endpoint |
+| `STRIPE_CURRENCY` | Checkout currency, default `usd`. Klarna needs the Stripe account's local currency (`cad` for a Canadian account); see [Klarna payments](#klarna-payments) |
 | `STRIPE_API_BASE` | Optional: send Stripe calls to a local mock (e.g. stripe-mock) |
 | `FRONTEND_URL` | Website URL used in password reset links |
 | `CORS_ALLOWED_ORIGINS` | Sites allowed to call the API from a browser (comma separated). Default `*` (any), as before |
@@ -167,6 +168,38 @@ Override the admin with `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` in `.e
 
 The database schema (every table, column, key and how each MongoDB
 collection maps to it) is documented in [docs/DATABASE.md](docs/DATABASE.md).
+
+## Klarna payments
+
+Klarna is paid through the same Stripe account as cards, so no other
+provider or key is needed:
+
+1. The website sends `paymentMethod: "klarna"` to `POST /api/orders`. The order
+   is stored with `paymentMethod: "klarna"` and a Klarna-only PaymentIntent.
+2. The website redirects the customer to Klarna (`stripe.confirmKlarnaPayment`),
+   and Klarna sends them back to `/checkout/order-received/{orderId}`.
+3. The webhook marks the order paid (`payment_intent.succeeded`), or failed
+   when the customer cancels or Klarna declines (`payment_intent.payment_failed`).
+   Retrying pays the same order again.
+
+Before Klarna can be used:
+
+- Turn on Klarna in the Stripe Dashboard (Settings > Payment methods), in test
+  mode and in live mode.
+- Set `STRIPE_CURRENCY` to the currency of the Stripe account's country.
+  Outside Europe, Klarna only accepts that currency, from customers in that
+  country: a Canadian account needs `cad` (and Canadian customers), a US
+  account `usd`. The setting applies to card payments too.
+- Send the `payment_intent.succeeded` and `payment_intent.payment_failed`
+  events to `/api/orders/webhook`.
+
+Klarna chooses which options to offer (pay in full, pay in 4, financing) from
+the customer's country and the order amount; see
+[Stripe's Klarna page](https://docs.stripe.com/payments/klarna) for the limits.
+To test in a Stripe sandbox with a Canadian account, check out with the email
+`customer@email.ca` (approved) or `customer+denied@email.ca` (declined), phone
+`+15197438620`, address 2693 Byron Rd, North Vancouver, BC V7H 1L9; any
+six-digit verification code works (`999999` fails).
 
 ## API
 
@@ -182,7 +215,7 @@ otherwise `403 {"success": false, "message": "Admin access required"}`.
 | Gift cards | `GET /giftcards` (same query as products), `GET /giftcards/categories`, `GET /giftcards/{id}`, `GET /giftcards/{id}/related`; 👑 `POST /giftcards`, `PUT /giftcards/{id}`, `DELETE /giftcards/{id}` |
 | Categories | `GET /category`, `GET /category/{id}`; 👑 `POST /category`, `PUT /category/{id}` (multipart `image`), `DELETE /category/{id}` |
 | Coupons | `POST /coupon/apply`; 👑 `GET /coupon`, `GET /coupon/{id}`, `POST /coupon`, `PUT /coupon/{id}`, `DELETE /coupon/{id}` |
-| Orders | `POST /orders` (guest or logged in; optional `newsletter: true`), `POST /orders/webhook` (Stripe); 🔒 `GET /orders` (customers: their own; admins: all, guest orders included); 👑 `PUT /orders/{id}/status`, `PUT /orders/{id}`, `DELETE /orders/{id}` |
+| Orders | `POST /orders` (guest or logged in; optional `newsletter: true`; optional `paymentMethod`: `card` (default) or `klarna`), `POST /orders/webhook` (Stripe); 🔒 `GET /orders` (customers: their own; admins: all, guest orders included); 👑 `PUT /orders/{id}/status`, `PUT /orders/{id}`, `DELETE /orders/{id}` |
 | Payment | `POST /payment/create-payment-intent` |
 | Newsletter | `POST /newsletter/subscribe` (`email`, optional `source`), `POST /newsletter/unsubscribe` (`email`); 👑 `GET /newsletter` (`page`, `limit`, `search`, `status`), `DELETE /newsletter/{id}` |
 | Services | `GET /services`, `GET /services/{id}`; 👑 `POST`, `PUT /{id}` (JSON, or multipart with an optional `serviceImage` file), `DELETE /{id}` |

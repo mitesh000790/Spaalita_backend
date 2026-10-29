@@ -16,17 +16,18 @@ class PaymentController extends Controller
     /**
      * POST /api/payment/create-payment-intent
      *
-     * The amount is in dollars; Stripe receives cents.
+     * The amount is in dollars; Stripe receives cents. The currency defaults
+     * to the store currency (services.stripe.currency).
      */
     public function createPaymentIntent(CreatePaymentIntentRequest $request): JsonResponse
     {
         try {
             $amount = TypeCaster::number($request->input('amount'), 'amount');
-            $currency = $request->input('currency') ?? 'usd';
+            $currency = $request->input('currency') ?? config('services.stripe.currency');
 
             $intent = $this->stripe->createPaymentIntent(
                 (int) round($amount * 100),
-                TypeCaster::string($currency, 'currency') ?? 'usd',
+                TypeCaster::string($currency, 'currency') ?? config('services.stripe.currency'),
             );
 
             return response()->json(['success' => true, 'clientSecret' => $intent->client_secret]);
