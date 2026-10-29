@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
 
 class OrderTest extends TestCase
@@ -42,6 +43,7 @@ class OrderTest extends TestCase
             ->assertJsonPath('data.totalAmount', 84.98)
             ->assertJsonPath('data.status', 'pending')
             ->assertJsonPath('data.paymentIntentId', 'pi_test_1')
+            ->assertJsonPath('data.paymentMethod', 'card')
             ->assertJsonPath('data.items.0.productId', ['_id' => $product->id, 'productName' => 'Cleanser'])
             ->assertJsonPath('data.items.0.productName', 'Cleanser')
             ->assertJsonPath('data.items.1.productName', 'Gift')
@@ -49,11 +51,64 @@ class OrderTest extends TestCase
             ->assertJsonPath('data.shippingAddress.zip', '')
             ->assertJsonPath('data.coupon', ['code' => 'FIX5', 'discountAmount' => 5, 'freeShippingAmount' => 0]);
 
+        // Card payments keep Stripe's default payment methods (no payment_method_types)
         $this->assertSame([[
             'amount' => 8498,
             'currency' => 'usd',
             'metadata' => ['userId' => 'guest', 'email' => 'guest@example.com', 'couponCode' => 'FIX5'],
+            'paymentMethodTypes' => [],
         ]], $calls);
+    }
+
+    public function test_klarna_checkout_creates_a_klarna_payment_intent(): void
+    {
+        $calls = [];
+        $this->fakeStripe($calls);
+
+        $this->postJson('/api/orders', [
+            'items' => [['name' => 'Gift', 'price' => 120, 'qty' => 1]],
+            'totalAmount' => 120,
+            'guestInfo' => ['name' => 'Kim', 'email' => 'kim@example.com'],
+            'paymentMethod' => 'klarna',
+        ])->assertCreated()
+            ->assertJsonPath('clientSecret', 'pi_test_1_secret')
+            ->assertJsonPath('data.paymentMethod', 'klarna')
+            ->assertJsonPath('data.paymentStatus', 'pending')
+            ->assertJsonPath('data.status', 'pending');
+
+        $this->assertSame(['klarna'], $calls[0]['paymentMethodTypes']);
+        $this->assertSame(12000, $calls[0]['amount']);
+        $this->assertSame('klarna', Order::query()->sole()->payment_method);
+    }
+
+    public function test_checkout_rejects_an_unknown_payment_method(): void
+    {
+        $calls = [];
+        $this->fakeStripe($calls);
+
+        $this->postJson('/api/orders', [
+            'items' => [['name' => 'Gift', 'price' => 10, 'qty' => 1]],
+            'totalAmount' => 10,
+            'guestInfo' => ['name' => 'G'],
+            'paymentMethod' => 'paypal',
+        ])->assertStatus(400)->assertExactJson(['success' => false, 'message' => 'Invalid payment method']);
+
+        $this->assertSame([], $calls);
+        $this->assertSame(0, Order::query()->count());
+    }
+
+    public function test_checkout_charges_in_the_configured_currency(): void
+    {
+        config(['services.stripe.currency' => 'cad']);
+        $calls = [];
+        $this->fakeStripe($calls);
+        $order = ['items' => [['name' => 'Gift', 'price' => 10, 'qty' => 1]], 'totalAmount' => 10, 'guestInfo' => ['name' => 'G']];
+
+        $this->postJson('/api/orders', $order)->assertCreated();
+        $this->postJson('/api/orders', $order + ['paymentMethod' => 'klarna'])->assertCreated();
+        $this->postJson('/api/payment/create-payment-intent', ['amount' => 10])->assertOk();
+
+        $this->assertSame(['cad', 'cad', 'cad'], array_column($calls, 'currency'));
     }
 
     public function test_guests_can_create_an_account_at_checkout(): void
@@ -126,18 +181,46 @@ class OrderTest extends TestCase
     public function test_stripe_webhook_marks_orders_paid_when_the_signature_is_valid(): void
     {
         $order = Order::query()->create(['total_amount' => 10, 'payment_intent_id' => 'pi_123']);
-        $payload = json_encode(['id' => 'evt_1', 'object' => 'event', 'type' => 'payment_intent.succeeded', 'data' => ['object' => ['id' => 'pi_123', 'object' => 'payment_intent']]]);
-        $timestamp = time();
-        $signature = hash_hmac('sha256', "{$timestamp}.{$payload}", 'whsec_testing');
+        $payload = self::paymentIntentEvent('payment_intent.succeeded', 'pi_123');
 
-        $this->call('POST', '/api/orders/webhook', [], [], [], [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_STRIPE_SIGNATURE' => "t={$timestamp},v1={$signature}",
-        ], $payload)->assertOk()->assertExactJson(['received' => true]);
+        $this->postStripeWebhook($payload)->assertOk()->assertExactJson(['received' => true]);
 
         $this->assertSame(['paid', 'succeeded'], [$order->fresh()->status, $order->fresh()->payment_status]);
 
         $this->call('POST', '/api/orders/webhook', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_STRIPE_SIGNATURE' => 't=1,v1=bad'], $payload)
             ->assertStatus(400);
+    }
+
+    public function test_stripe_webhook_marks_a_cancelled_or_declined_klarna_payment_failed(): void
+    {
+        $order = Order::query()->create(['total_amount' => 10, 'payment_intent_id' => 'pi_klarna', 'payment_method' => 'klarna']);
+
+        $this->postStripeWebhook(self::paymentIntentEvent('payment_intent.payment_failed', 'pi_klarna'))->assertOk();
+
+        $this->assertSame(['failed', 'failed'], [$order->fresh()->status, $order->fresh()->payment_status]);
+
+        // Paying the same order again (the customer retries with Klarna) marks it paid
+        $this->postStripeWebhook(self::paymentIntentEvent('payment_intent.succeeded', 'pi_klarna'))->assertOk();
+
+        $this->assertSame(['paid', 'succeeded'], [$order->fresh()->status, $order->fresh()->payment_status]);
+    }
+
+    private static function paymentIntentEvent(string $type, string $paymentIntentId): string
+    {
+        return json_encode(['id' => 'evt_1', 'object' => 'event', 'type' => $type, 'data' => ['object' => ['id' => $paymentIntentId, 'object' => 'payment_intent']]]);
+    }
+
+    /**
+     * POST a webhook payload signed with STRIPE_WEBHOOK_SECRET (whsec_testing in phpunit.xml).
+     */
+    private function postStripeWebhook(string $payload): TestResponse
+    {
+        $timestamp = time();
+        $signature = hash_hmac('sha256', "{$timestamp}.{$payload}", 'whsec_testing');
+
+        return $this->call('POST', '/api/orders/webhook', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_STRIPE_SIGNATURE' => "t={$timestamp},v1={$signature}",
+        ], $payload);
     }
 }

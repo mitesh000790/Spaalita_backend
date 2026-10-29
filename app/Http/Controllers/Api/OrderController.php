@@ -92,7 +92,8 @@ class OrderController extends Controller
     /**
      * POST /api/orders - checkout for guests and logged-in users.
      *
-     * Returns the order and the Stripe client secret used to confirm payment.
+     * Returns the order and the Stripe client secret used to confirm payment
+     * (by card, or with Klarna when paymentMethod is "klarna").
      */
     public function store(StoreOrderRequest $request, CheckoutService $checkout): JsonResponse
     {
@@ -217,6 +218,8 @@ class OrderController extends Controller
      * POST /api/orders/webhook - Stripe events (verified with STRIPE_WEBHOOK_SECRET).
      *
      * payment_intent.succeeded marks the order paid; payment_intent.payment_failed marks it failed.
+     * The same events cover card and Klarna payments (a Klarna payment that the customer
+     * cancels, or that Klarna declines, sends payment_intent.payment_failed).
      */
     public function stripeWebhook(Request $request, StripeService $stripe): JsonResponse|Response
     {

@@ -23,13 +23,18 @@ class StripeService
 
     /**
      * @param  array<string, string>  $metadata
+     * @param  list<string>  $paymentMethodTypes  e.g. ['klarna']; empty uses the payment methods enabled in the Dashboard
      */
-    public function createPaymentIntent(int $amountInCents, string $currency, array $metadata = []): PaymentIntent
+    public function createPaymentIntent(int $amountInCents, string $currency, array $metadata = [], array $paymentMethodTypes = []): PaymentIntent
     {
         $params = ['amount' => $amountInCents, 'currency' => $currency];
 
         if ($metadata !== []) {
             $params['metadata'] = $metadata;
+        }
+
+        if ($paymentMethodTypes !== []) {
+            $params['payment_method_types'] = $paymentMethodTypes;
         }
 
         return $this->client()->paymentIntents->create($params);

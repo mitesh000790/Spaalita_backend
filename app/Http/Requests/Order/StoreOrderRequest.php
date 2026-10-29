@@ -2,10 +2,12 @@
 
 namespace App\Http\Requests\Order;
 
+use App\Enums\PaymentMethod;
 use App\Http\Requests\ApiFormRequest;
 use App\Rules\NonEmptyList;
 use App\Rules\Truthy;
 use App\Support\Js;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 
 class StoreOrderRequest extends ApiFormRequest
@@ -17,6 +19,18 @@ class StoreOrderRequest extends ApiFormRequest
         return [
             'items' => [new NonEmptyList(self::ITEMS_MESSAGE)],
             'totalAmount' => [new Truthy(self::ITEMS_MESSAGE)],
+            // Optional: "card" (default) or "klarna"
+            'paymentMethod' => ['nullable', Rule::enum(PaymentMethod::class)],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'paymentMethod' => 'Invalid payment method',
         ];
     }
 

@@ -36,14 +36,14 @@ abstract class TestCase extends BaseTestCase
     /**
      * Replace Stripe with a fake that records created payment intents.
      *
-     * @param  array<int, array<string, mixed>>  $calls  receives [amount, currency, metadata] per call
+     * @param  array<int, array<string, mixed>>  $calls  receives [amount, currency, metadata, paymentMethodTypes] per call
      */
     protected function fakeStripe(array &$calls = []): void
     {
         $this->mock(StripeService::class, function (MockInterface $mock) use (&$calls) {
             $mock->shouldReceive('createPaymentIntent')->andReturnUsing(
-                function (int $amount, string $currency, array $metadata = []) use (&$calls) {
-                    $calls[] = compact('amount', 'currency', 'metadata');
+                function (int $amount, string $currency, array $metadata = [], array $paymentMethodTypes = []) use (&$calls) {
+                    $calls[] = compact('amount', 'currency', 'metadata', 'paymentMethodTypes');
                     $id = 'pi_test_'.count($calls);
 
                     return PaymentIntent::constructFrom(['id' => $id, 'client_secret' => $id.'_secret']);
