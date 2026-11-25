@@ -21,7 +21,7 @@ use Throwable;
 
 class CouponController extends Controller
 {
-    private const PRODUCT_RELATIONS = ['includedProducts.productable', 'excludedProducts.productable'];
+    private const PRODUCT_RELATIONS = Coupon::PRODUCT_RELATIONS;
 
     public function __construct(private readonly CouponCalculator $calculator) {}
 
@@ -181,7 +181,9 @@ class CouponController extends Controller
      * POST /api/coupon/apply
      *
      * Body: couponCode, cartItems [{productId, price, qty, category}], shippingAmount.
-     * Each successful call counts as one use of the coupon.
+     * A preview for the cart: the discount is calculated again from the catalogue
+     * prices at checkout (CheckoutPricing), and a use of the coupon is counted
+     * when an order with it is paid (Stripe webhook), not here.
      */
     public function apply(ApplyCouponRequest $request): JsonResponse
     {
@@ -205,9 +207,6 @@ class CouponController extends Controller
             if ($result->error !== null) {
                 return response()->json(['success' => false, 'message' => $result->error], 400);
             }
-
-            $coupon->usage_count = ($coupon->usage_count ?? 0) + 1;
-            $coupon->save();
 
             return response()->json([
                 'success' => true,

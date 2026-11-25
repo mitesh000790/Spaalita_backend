@@ -13,6 +13,11 @@ class Coupon extends BaseModel
 
     public const STATUSES = ['active', 'inactive'];
 
+    /**
+     * Relations CouponCalculator reads (the coupon's product restrictions).
+     */
+    public const PRODUCT_RELATIONS = ['includedProducts.productable', 'excludedProducts.productable'];
+
     protected $fillable = [
         'code',
         'discount_type',

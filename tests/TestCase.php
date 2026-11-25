@@ -3,6 +3,7 @@
 namespace Tests;
 
 use App\Models\Admin;
+use App\Models\Product;
 use App\Models\User;
 use App\Services\JwtService;
 use App\Services\StripeService;
@@ -31,6 +32,20 @@ abstract class TestCase extends BaseTestCase
     protected function asUser(User $user): array
     {
         return ['Authorization' => 'Bearer '.app(JwtService::class)->issueUserToken($user)];
+    }
+
+    /**
+     * A cart line for a new active product, as the shop sends it at checkout
+     * (checkout only accepts catalogue items, at their catalogue price).
+     *
+     * @param  array<string, mixed>  $attributes  product attributes (e.g. sale_price)
+     * @return array{productId: string, name: string, price: float, qty: int}
+     */
+    protected function cartLine(float $price = 50, int $qty = 1, array $attributes = []): array
+    {
+        $product = Product::factory()->create(['price' => $price] + $attributes);
+
+        return ['productId' => $product->id, 'name' => $product->product_name, 'price' => $product->checkoutPrice(), 'qty' => $qty];
     }
 
     /**

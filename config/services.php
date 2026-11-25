@@ -39,8 +39,9 @@ return [
         'secret' => env('STRIPE_SECRET_KEY'),
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
         // Currency of checkout payments (ISO code). Klarna only accepts the currency of the
-        // Stripe account's country, from customers in that country (CAD for a Canadian account).
-        'currency' => strtolower((string) env('STRIPE_CURRENCY', 'usd')),
+        // Stripe account's country, from customers in that country. The Spa A'lita account
+        // (acct_1FdWyqHp9OLq5NYn) is Canadian, so the default is CAD.
+        'currency' => strtolower((string) env('STRIPE_CURRENCY', 'cad')),
         // Optional: send API calls to a local mock (e.g. stripe-mock) instead of api.stripe.com.
         'api_base' => env('STRIPE_API_BASE'),
     ],

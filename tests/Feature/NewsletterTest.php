@@ -79,7 +79,7 @@ class NewsletterTest extends TestCase
     public function test_the_checkout_checkbox_subscribes_the_customer(): void
     {
         $this->fakeStripe();
-        $order = ['items' => [['name' => 'Facial', 'price' => 50, 'qty' => 1]], 'totalAmount' => 50];
+        $order = ['items' => [$this->cartLine(50)], 'totalAmount' => 50];
 
         $this->postJson('/api/orders', $order + [
             'guestInfo' => ['name' => 'Guest', 'email' => 'Guest@Example.com'],

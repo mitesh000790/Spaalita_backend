@@ -1,6 +1,11 @@
 *.log
 .DS_Store
+# Local settings and secrets (Stripe keys, JWT secret...). Never commit.
+.env
 .env.backup
+.env.production
+# Editor settings: the malware found in Nov 2026 hid an auto-run task in .vscode/tasks.json.
+/.vscode
 .phpactor.json
 .phpunit.result.cache
 /.fleet
@@ -28,5 +33,4 @@ Thumbs.db
 branch_structure.json
 temp_auto_push.bat
 temp_interactive_push.bat
-.gitignore
 config.bat

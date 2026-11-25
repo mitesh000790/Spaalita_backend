@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Enums\PaymentMethod;
-use App\Exceptions\CastException;
+use App\Exceptions\CheckoutException;
 use App\Models\Order;
 use App\Models\OrderAddress;
 use App\Models\User;
@@ -18,21 +18,27 @@ use Stripe\PaymentIntent;
 use Throwable;
 
 /**
- * Places an order: optionally registers a guest, applies the coupon
- * discount, creates the Stripe PaymentIntent for the chosen payment method
- * (card or Klarna) and stores the pending order.
+ * Places an order: prices the cart from the catalogue (CheckoutPricing),
+ * optionally registers a guest, creates the Stripe PaymentIntent for the
+ * chosen payment method (card or Klarna) and stores the pending order.
  * A ticked "newsletter" checkbox also subscribes the customer's email.
+ *
+ * The amount charged is always the catalogue total: the prices and total
+ * sent by the shop are only compared with it (see CheckoutPricing).
  */
 class CheckoutService
 {
     public function __construct(
         private readonly StripeService $stripe,
         private readonly NewsletterService $newsletter,
+        private readonly CheckoutPricing $pricing,
     ) {}
 
     /**
      * @param  array<string, mixed>  $input  validated checkout payload
      * @return array{0: Order, 1: PaymentIntent}
+     *
+     * @throws CheckoutException when the cart must be corrected before paying
      */
     public function placeOrder(array $input, ?string $userId): array
     {
@@ -40,34 +46,25 @@ class CheckoutService
         $billingAddress = $input['billingAddress'] ?? null;
         $shippingAddress = $input['shippingAddress'] ?? null;
         $coupon = Js::truthy($input['coupon'] ?? null) ? $input['coupon'] : null;
+        $items = is_array($input['items']) ? array_values($input['items']) : [];
+
+        // Before anything is created: a cart that must be corrected leaves no account, payment or order behind
+        $cart = $this->pricing->price($items, $coupon);
+        $this->pricing->assertShopTotalMatches($cart, $items, $input['totalAmount'] ?? null, $coupon);
 
         if (! Js::truthy($userId) && Js::truthy($input['createAccount'] ?? null) && Js::truthy(self::field($guestInfo, 'email'))) {
             $userId = $this->findOrRegisterGuest($guestInfo, $billingAddress, $shippingAddress)->id;
         }
 
-        $finalAmount = $input['totalAmount'];
-        $discountAmount = self::field($coupon, 'discountAmount');
-
-        if (Js::truthy($discountAmount)) {
-            $discounted = $this->jsNumber($finalAmount) - $this->jsNumber($discountAmount);
-            $finalAmount = is_nan($discounted) ? NAN : max(0, $discounted);
-        }
-
-        $amountInCents = round($this->jsNumber($finalAmount) * 100);
-
-        if (! is_finite($amountInCents)) {
-            throw new InvalidArgumentException('Invalid integer: NaN');
-        }
-
         $paymentMethod = PaymentMethod::fromInput($input['paymentMethod'] ?? null);
 
         $paymentIntent = $this->stripe->createPaymentIntent(
-            (int) $amountInCents,
+            $cart->totalInCents(),
             config('services.stripe.currency'),
             [
                 'userId' => Js::truthy($userId) ? (string) $userId : 'guest',
                 'email' => self::jsString(self::field($guestInfo, 'email') ?: ''),
-                'couponCode' => self::jsString(self::field($coupon, 'code') ?: ''),
+                'couponCode' => $cart->coupon?->code ?? '',
             ],
             $paymentMethod->stripePaymentMethodTypes(),
         );
@@ -75,8 +72,7 @@ class CheckoutService
         $order = DB::transaction(fn () => $this->createOrder(
             $input,
             Js::truthy($userId) ? (string) $userId : null,
-            $finalAmount,
-            $coupon,
+            $cart,
             $paymentIntent->id,
             $paymentMethod,
         ));
@@ -112,37 +108,35 @@ class CheckoutService
     /**
      * @param  array<string, mixed>  $input
      */
-    private function createOrder(array $input, ?string $userId, mixed $finalAmount, mixed $coupon, string $paymentIntentId, PaymentMethod $paymentMethod): Order
+    /**
+     * Store the order with the catalogue prices and totals of the priced cart.
+     */
+    private function createOrder(array $input, ?string $userId, PricedCart $cart, string $paymentIntentId, PaymentMethod $paymentMethod): Order
     {
         $guestInfo = $userId === null ? ($input['guestInfo'] ?? null) : null;
-        $couponData = is_array($coupon) ? $coupon : ($coupon !== null ? [] : null);
 
         $order = Order::query()->create([
             'user_id' => $userId,
             'guest_name' => TypeCaster::string(self::field($guestInfo, 'name'), 'guestInfo.name'),
             'guest_email' => TypeCaster::string(self::field($guestInfo, 'email'), 'guestInfo.email'),
             'guest_phone' => TypeCaster::string(self::field($guestInfo, 'phone'), 'guestInfo.phone'),
-            'total_amount' => TypeCaster::number($finalAmount, 'totalAmount'),
+            'total_amount' => $cart->total(),
             'status' => 'pending',
             'payment_intent_id' => $paymentIntentId,
             'payment_method' => $paymentMethod->value,
             'payment_status' => 'pending',
-            'coupon_code' => $couponData === null ? null : TypeCaster::string($couponData['code'] ?? null, 'coupon.code'),
-            'coupon_discount_amount' => $couponData === null ? null : (TypeCaster::number($couponData['discountAmount'] ?? null, 'coupon.discountAmount') ?? 0),
-            'coupon_free_shipping_amount' => $couponData === null ? null : (TypeCaster::number($couponData['freeShippingAmount'] ?? null, 'coupon.freeShippingAmount') ?? 0),
+            'coupon_code' => $cart->coupon?->code,
+            'coupon_discount_amount' => $cart->coupon === null ? null : $cart->discountAmount,
+            'coupon_free_shipping_amount' => $cart->coupon === null ? null : 0,
         ]);
 
-        foreach (array_values($input['items']) as $position => $item) {
-            if (! is_array($item) || ($item !== [] && array_is_list($item))) {
-                throw CastException::make('Embedded', $item, "items.{$position}");
-            }
-
+        foreach ($cart->lines as $position => $line) {
             $order->items()->create([
-                'product_id' => TypeCaster::objectId($item['productId'] ?? null, "items.{$position}.productId"),
-                'name' => TypeCaster::string($item['name'] ?? null, "items.{$position}.name"),
-                'price' => TypeCaster::number($item['price'] ?? null, "items.{$position}.price"),
-                'qty' => TypeCaster::number($item['qty'] ?? null, "items.{$position}.qty"),
-                'image' => TypeCaster::string($item['image'] ?? null, "items.{$position}.image"),
+                'product_id' => $line['item']->id,
+                'name' => $line['name'],
+                'price' => $line['price'],
+                'qty' => $line['qty'],
+                'image' => TypeCaster::string($line['image'], "items.{$position}.image"),
                 'position' => $position,
             ]);
         }
@@ -259,11 +253,6 @@ class CheckoutService
             is_array($value) => array_is_list($value) ? implode(',', array_map(self::jsString(...), $value)) : '[object Object]',
             default => (string) $value,
         };
-    }
-
-    private function jsNumber(mixed $value): float
-    {
-        return (float) (Js::toNumber($value) ?? NAN);
     }
 
     /**

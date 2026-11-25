@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Exceptions\CastException;
+use App\Exceptions\CheckoutException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Order\StoreOrderRequest;
 use App\Http\Resources\CreatedOrderResource;
 use App\Http\Resources\OrderListResource;
 use App\Http\Resources\OrderResource;
+use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\OrderAddress;
 use App\Services\CheckoutService;
@@ -21,6 +23,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Stripe\StripeObject;
 use Throwable;
 
 class OrderController extends Controller
@@ -93,7 +97,9 @@ class OrderController extends Controller
      * POST /api/orders - checkout for guests and logged-in users.
      *
      * Returns the order and the Stripe client secret used to confirm payment
-     * (by card, or with Klarna when paymentMethod is "klarna").
+     * (by card, or with Klarna when paymentMethod is "klarna"). The amount is
+     * priced from the catalogue; a cart the customer must correct gets a 4xx
+     * response with a `code` (see CheckoutException).
      */
     public function store(StoreOrderRequest $request, CheckoutService $checkout): JsonResponse
     {
@@ -108,6 +114,8 @@ class OrderController extends Controller
                 'data' => new CreatedOrderResource($order),
                 'clientSecret' => $paymentIntent->client_secret,
             ], 201);
+        } catch (CheckoutException $exception) {
+            return $exception->toResponse();
         } catch (Throwable $exception) {
             return $this->serverError('Error creating order', $exception);
         }
@@ -220,6 +228,10 @@ class OrderController extends Controller
      * payment_intent.succeeded marks the order paid; payment_intent.payment_failed marks it failed.
      * The same events cover card and Klarna payments (a Klarna payment that the customer
      * cancels, or that Klarna declines, sends payment_intent.payment_failed).
+     *
+     * Stripe can send an event more than once and in any order, so a paid order stays paid
+     * (a failed attempt reported after the successful one does not change it) and its
+     * coupon use is counted only once.
      */
     public function stripeWebhook(Request $request, StripeService $stripe): JsonResponse|Response
     {
@@ -229,20 +241,55 @@ class OrderController extends Controller
             return response('Webhook Error: '.$exception->getMessage(), 400);
         }
 
-        $outcome = match ($event->type) {
-            'payment_intent.succeeded' => ['payment_status' => 'succeeded', 'status' => 'paid'],
-            'payment_intent.payment_failed' => ['payment_status' => 'failed', 'status' => 'failed'],
+        $paymentIntent = $event->data->object;
+
+        match ($event->type) {
+            'payment_intent.succeeded' => $this->markPaid($paymentIntent),
+            'payment_intent.payment_failed' => $this->markFailed($paymentIntent),
             default => null,
         };
 
-        if ($outcome !== null) {
-            Order::query()
-                ->where('payment_intent_id', $event->data->object->id)
-                ->first()
-                ?->applyUpdate($outcome);
-        }
-
         return response()->json(['received' => true]);
+    }
+
+    /**
+     * Mark the PaymentIntent's order paid (once) and count the use of its coupon.
+     */
+    private function markPaid(StripeObject $paymentIntent): void
+    {
+        DB::transaction(function () use ($paymentIntent) {
+            $order = Order::query()->where('payment_intent_id', $paymentIntent->id)->lockForUpdate()->first();
+
+            if ($order === null || $order->payment_status === 'succeeded') {
+                return;
+            }
+
+            $order->applyUpdate(['payment_status' => 'succeeded', 'status' => 'paid']);
+
+            // Coupon usage limits count paid orders (applying a coupon in the cart is only a preview)
+            if ($order->coupon_code !== null) {
+                Coupon::query()->where('code', $order->coupon_code)->increment('usage_count');
+            }
+
+            $received = $paymentIntent['amount_received'] ?? null;
+            $expected = (int) round($order->total_amount * 100);
+
+            if (is_int($received) && $received !== $expected) {
+                Log::warning("Order {$order->id}: Stripe received {$received} cents, the order total is {$expected} cents.");
+            }
+        });
+    }
+
+    /**
+     * Mark the PaymentIntent's order failed, unless it has already been paid.
+     */
+    private function markFailed(StripeObject $paymentIntent): void
+    {
+        $order = Order::query()->where('payment_intent_id', $paymentIntent->id)->first();
+
+        if ($order !== null && $order->payment_status !== 'succeeded') {
+            $order->applyUpdate(['payment_status' => 'failed', 'status' => 'failed']);
+        }
     }
 
     /**

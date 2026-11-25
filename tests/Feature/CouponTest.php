@@ -75,12 +75,13 @@ class CouponTest extends TestCase
             ],
         ]);
 
-        $this->assertSame(1, $coupon->fresh()->usage_count);
+        // Applying is only a preview: a use is counted when an order with the coupon is paid
+        $this->assertSame(0, $coupon->fresh()->usage_count);
     }
 
     public function test_fixed_discount_free_shipping_and_usage_limit(): void
     {
-        Coupon::factory()->fixed(5)->create(['code' => 'FIX5', 'allow_free_shipping' => true, 'usage_limit_per_coupon' => 1]);
+        $coupon = Coupon::factory()->fixed(5)->create(['code' => 'FIX5', 'allow_free_shipping' => true, 'usage_limit_per_coupon' => 1]);
         $cart = ['couponCode' => 'FIX5', 'cartItems' => [['productId' => 'a', 'price' => '3', 'qty' => '1']], 'shippingAmount' => '4.5'];
 
         $this->postJson('/api/coupon/apply', $cart)
@@ -89,6 +90,9 @@ class CouponTest extends TestCase
             ->assertJsonPath('data.freeShippingAmount', '4.5')
             ->assertJsonPath('data.totalAfterDiscount', -4.5);
 
+        // Previews can be repeated; once a paid order has used the coupon, the limit is reached
+        $this->postJson('/api/coupon/apply', $cart)->assertOk();
+        $coupon->update(['usage_count' => 1]);
         $this->postJson('/api/coupon/apply', $cart)->assertStatus(400)->assertJsonPath('message', 'Coupon usage limit reached');
     }
 

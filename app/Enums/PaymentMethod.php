@@ -21,7 +21,8 @@ enum PaymentMethod: string
     }
 
     /**
-     * `payment_method_types` for the PaymentIntent. Card keeps Stripe's default
+     * Payment method types the PaymentIntent is restricted to (sent to Stripe as
+     * `allowed_payment_method_types`, see StripeService). Card keeps Stripe's default
      * (the payment methods enabled in the Dashboard), as before Klarna was added;
      * a Klarna PaymentIntent accepts Klarna only.
      *

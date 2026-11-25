@@ -110,7 +110,7 @@ Identical structure.
 | expiry_date | datetime(3) | |
 | min_order_amount, max_order_amount | decimal(12,2) | |
 | categories, exclude_categories | json | category names matched against cart items |
-| usage_limit_per_coupon, usage_limit_per_user, usage_count | int | |
+| usage_limit_per_coupon, usage_limit_per_user, usage_count | int | `usage_count` = paid orders that used the coupon (counted by the Stripe webhook, not by `/coupon/apply`) |
 | status | varchar(20) | `active` / `inactive` |
 | created_at, updated_at | datetime(3) | |
 

@@ -94,6 +94,33 @@ abstract class CatalogItem extends BaseModel
     }
 
     /**
+     * The unit price a customer pays at checkout, in dollars.
+     *
+     * Same rule as the shop's getProductPricing(): the sale price when one is
+     * set, otherwise the regular price, falling back to `price` (imported
+     * WooCommerce items have an empty regular_price).
+     */
+    public function checkoutPrice(): float
+    {
+        $regular = self::positivePrice($this->regular_price) ?: self::positivePrice($this->price);
+        $sale = self::positivePrice($this->sale_price);
+
+        return round($sale > 0 ? $sale : $regular, 2);
+    }
+
+    /**
+     * A stored price as a number; empty, non-numeric and negative values are 0.
+     */
+    private static function positivePrice(mixed $value): float
+    {
+        if (is_string($value)) {
+            $value = trim($value);
+        }
+
+        return is_numeric($value) ? max(0.0, (float) $value) : 0.0;
+    }
+
+    /**
      * Records whose status is not "inactive" (null counts as not inactive).
      */
     public function scopeNotInactive(Builder $query): void

@@ -11,7 +11,6 @@ use App\Http\Controllers\Api\GiftCardController;
 use App\Http\Controllers\Api\MonthlySpecialController;
 use App\Http\Controllers\Api\NewsletterController;
 use App\Http\Controllers\Api\OrderController;
-use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\RoleController;
 use App\Http\Controllers\Api\ServiceController;
@@ -118,7 +117,8 @@ Route::prefix('orders')->controller(OrderController::class)->group(function () {
     Route::post('webhook', 'stripeWebhook');
 });
 
-Route::post('payment/create-payment-intent', [PaymentController::class, 'createPaymentIntent']);
+// Payments are created only by checkout (POST /api/orders), for the amount priced from the
+// catalogue. There is deliberately no endpoint that creates a PaymentIntent for any amount.
 
 Route::post('contact', [ContactController::class, 'store']);
 

@@ -27,6 +27,25 @@ class StripeService
      */
     public function createPaymentIntent(int $amountInCents, string $currency, array $metadata = [], array $paymentMethodTypes = []): PaymentIntent
     {
+        return $this->client()->paymentIntents->create(
+            self::paymentIntentParams($amountInCents, $currency, $metadata, $paymentMethodTypes),
+        );
+    }
+
+    /**
+     * Parameters of PaymentIntent create.
+     *
+     * The restriction to given payment methods is sent as `allowed_payment_method_types`:
+     * the API version of stripe-php 22 (2026-09-30.endive) no longer accepts
+     * `payment_method_types` ("The `payment_method_types` parameter is no longer supported").
+     * The methods must also be enabled in the Dashboard (Settings > Payment methods).
+     *
+     * @param  array<string, string>  $metadata
+     * @param  list<string>  $paymentMethodTypes
+     * @return array<string, mixed>
+     */
+    public static function paymentIntentParams(int $amountInCents, string $currency, array $metadata = [], array $paymentMethodTypes = []): array
+    {
         $params = ['amount' => $amountInCents, 'currency' => $currency];
 
         if ($metadata !== []) {
@@ -34,10 +53,10 @@ class StripeService
         }
 
         if ($paymentMethodTypes !== []) {
-            $params['payment_method_types'] = $paymentMethodTypes;
+            $params['allowed_payment_method_types'] = $paymentMethodTypes;
         }
 
-        return $this->client()->paymentIntents->create($params);
+        return $params;
     }
 
     /**
